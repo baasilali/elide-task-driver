@@ -1,6 +1,6 @@
 # Elide Task Driver for Nomad
 
-> **A HashiCorp Nomad task driver plugin for orchestrating Elide polyglot runtime instances**
+> **A HashiCorp Nomad task driver plugin that runs multiple Elide code snippets in a single shared daemon instance for maximum resource efficiency**
 
 [![Elide](https://img.shields.io/badge/Elide-v1.0--beta-blue)](https://elide.dev)
 [![Nomad](https://img.shields.io/badge/Nomad-1.9+-purple)](https://www.nomadproject.io)
@@ -29,18 +29,47 @@
 
 ---
 
+## ⚠️ Current Status
+
+**Architecture**: Designed for **one Elide daemon per Nomad client** running multiple code snippets.
+
+**Dependencies**: 
+- ⚠️ **Waiting for Elide team** to expose daemon mode with gRPC API
+- ✅ Elide proto definitions exist (`InvocationApi`)
+- ✅ Elide CLI works (v1.0-beta10)
+- ⚠️ Daemon mode not exposed in current Elide CLI
+
+**Next Steps**:
+1. ✅ Architecture designed (one daemon, multiple snippets)
+2. ✅ Feature request drafted (see `FEATURE_REQUEST.md`)
+3. ⏭️ Request feature from Elide team
+4. ⏭️ Build driver with temporary workaround (if needed)
+5. ⏭️ Optimize with gRPC when available
+
+---
+
 ## Overview
 
 The **Elide Task Driver** is a custom Nomad plugin written in Go that enables HashiCorp Nomad to orchestrate and manage Elide runtime instances. Instead of running containerized workloads or virtual machines, this driver executes polyglot applications directly on the Elide runtime with native performance and seamless multi-language interoperability.
 
+### Key Innovation: One Daemon, Multiple Snippets
+
+**Unlike traditional approaches**, this driver uses **one Elide daemon per Nomad client node** that executes multiple code snippets (tasks) in a shared GraalVM context. This provides:
+
+- **Resource Efficiency**: One GraalVM instance vs many (massive memory savings)
+- **Performance**: Shared context initialization (faster execution)
+- **Scalability**: More tasks per node (higher density)
+- **Cost Savings**: Lower resource usage (better utilization)
+
 ### What Makes This Special?
 
-1. **Native Performance**: No container overhead - run polyglot apps directly
-2. **Multi-Language**: Execute Python, JavaScript, TypeScript, and JVM languages in one process
-3. **Built-in AI**: Leverage Elide's local AI inference without external services
-4. **Lightweight**: Minimal resource footprint compared to traditional container orchestration
-5. **gRPC Integration**: Type-safe communication via Protocol Buffers
-6. **Nomad Native**: Full integration with Nomad's scheduling, monitoring, and lifecycle management
+1. **Resource Efficient**: One Elide daemon per Nomad client, multiple snippets in shared context
+2. **Native Performance**: No container overhead - run polyglot apps directly
+3. **Multi-Language**: Execute Python, JavaScript, TypeScript, and JVM languages in one process
+4. **Built-in AI**: Leverage Elide's local AI inference without external services
+5. **Lightweight**: Minimal resource footprint compared to traditional container orchestration
+6. **gRPC Integration**: Type-safe communication via Protocol Buffers (when available)
+7. **Nomad Native**: Full integration with Nomad's scheduling, monitoring, and lifecycle management
 
 ---
 
@@ -50,27 +79,34 @@ The **Elide Task Driver** is a custom Nomad plugin written in Go that enables Ha
 You want to run Elide applications on a Nomad cluster, but Nomad doesn't natively understand how to execute Elide workloads. You could wrap Elide in containers, but that adds overhead and complexity.
 
 ### The Solution
-A **task driver plugin** that acts as a bridge:
+A **task driver plugin** that acts as a bridge, using **one Elide daemon per Nomad client** to run multiple code snippets:
 
 ```
 Nomad Scheduler
     ↓ (HCL job specification)
 Elide Task Driver (Go)
-    ↓ (gRPC/Unix Socket)
-Elide Runtime Instance
-    ↓ (polyglot execution)
-Your Application (Python/JS/etc)
+    ↓ (gRPC/API - when available)
+Elide Daemon (Single GraalVM Instance)
+    ├── Task 1 → Snippet 1 (isolated execution)
+    ├── Task 2 → Snippet 2 (isolated execution)
+    └── Task 3 → Snippet 3 (isolated execution)
     ↑ (output, logs, metrics)
 Back to Nomad
 ```
 
+**Architecture Benefits**:
+- **One daemon** per Nomad client node (not one per task)
+- **Shared GraalVM context** for efficiency
+- **Multiple snippets** executed concurrently
+- **Resource efficient** compared to spawning processes per task
+
 ### Comparison
 
-| Approach | Overhead | Complexity | Elide Features |
-|----------|----------|------------|----------------|
-| **Docker + Elide** | High (container runtime) | Medium | All |
-| **Raw Exec Driver** | Low | Low | No lifecycle management |
-| **Elide Task Driver** | Minimal | Low | All + Nomad integration |
+| Approach | Overhead | Complexity | Elide Features | Resource Efficiency |
+|----------|----------|------------|----------------|---------------------|
+| **Docker + Elide** | High (container runtime) | Medium | All | ❌ Multiple containers |
+| **Raw Exec Driver** | Low | Low | No lifecycle management | ❌ Multiple processes |
+| **Elide Task Driver** | Minimal | Low | All + Nomad integration | ✅ **One daemon, multiple snippets** |
 
 ---
 
@@ -118,32 +154,33 @@ Back to Nomad
 │  │ │ - Event publishing                               │   │ │
 │  │ └──────────────────────────────────────────────────┘   │ │
 │  │ ┌──────────────────────────────────────────────────┐   │ │
-│  │ │ Elide API Client (gRPC)                          │   │ │
+│  │ │ Elide API Client (gRPC/HTTP)                       │   │ │
 │  │ │ - Proto-generated stubs                          │   │ │
-│  │ │ - Unix socket transport                          │   │ │
+│  │ │ - Unix socket or TCP transport                   │   │ │
 │  │ └─────────────┬────────────────────────────────────┘   │ │
 │  └───────────────┼────────────────────────────────────────┘ │
-│                  │ Unix Socket / Stdio                      │
+│                  │ Unix Socket / TCP / API                   │
 │                  ↓                                          │
 │  ┌────────────────────────────────────────────────────────┐ │
-│  │ Elide Runtime Instance (per task)                      │ │
+│  │ Elide Daemon (Single Instance per Nomad Client)        │ │
 │  │ ┌──────────────────────────────────────────────────┐   │ │
-│  │ │ GraalVM Polyglot Engine                          │   │ │
+│  │ │ GraalVM Polyglot Engine (Shared Context)         │   │ │
 │  │ │ ┌────────────────┐  ┌────────────────┐          │   │ │
 │  │ │ │ Python VM      │  │ JavaScript VM  │          │   │ │
 │  │ │ └────────────────┘  └────────────────┘          │   │ │
 │  │ └──────────────────────────────────────────────────┘   │ │
 │  │ ┌──────────────────────────────────────────────────┐   │ │
-│  │ │ Elide Intrinsics                                 │   │ │
+│  │ │ Elide Intrinsics (Shared)                        │   │ │
 │  │ │ - Local AI (llama.cpp)                           │   │ │
 │  │ │ - HTTP Server                                    │   │ │
 │  │ │ - SQLite                                         │   │ │
 │  │ └──────────────────────────────────────────────────┘   │ │
 │  │ ┌──────────────────────────────────────────────────┐   │ │
-│  │ │ User Application Code                            │   │ │
-│  │ │ - Python scripts                                 │   │ │
-│  │ │ - JavaScript/TypeScript                          │   │ │
-│  │ │ - Kotlin/Java                                    │   │ │
+│  │ │ Multiple Task Snippets (Isolated Execution)     │   │ │
+│  │ │ ├── Task 1: Python script                        │   │ │
+│  │ │ ├── Task 2: JavaScript snippet                  │   │ │
+│  │ │ ├── Task 3: TypeScript code                     │   │ │
+│  │ │ └── Task 4: Kotlin/Java code                    │   │ │
 │  │ └──────────────────────────────────────────────────┘   │ │
 │  └────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
@@ -156,33 +193,41 @@ sequenceDiagram
     participant User
     participant Nomad
     participant Driver
-    participant Elide
-    participant App
+    participant ElideDaemon
+    participant Snippet
+
+    Note over Driver,ElideDaemon: One Elide Daemon per Nomad Client
 
     User->>Nomad: Submit job (HCL)
     Nomad->>Nomad: Schedule task
     Nomad->>Driver: StartTask(config)
     Driver->>Driver: Parse task config
-    Driver->>Elide: exec.Command("elide", "run", script)
-    Elide->>App: Load and initialize
-    App-->>Elide: Ready
-    Elide-->>Driver: Socket/stdout ready
+    
+    alt Daemon not running
+        Driver->>ElideDaemon: Start daemon (once per client)
+        ElideDaemon-->>Driver: Daemon ready
+    end
+    
+    Driver->>ElideDaemon: ExecuteSnippet(code, env, args)
+    ElideDaemon->>Snippet: Execute in shared context
+    Snippet-->>ElideDaemon: Result (stdout, stderr, exit_code)
+    ElideDaemon-->>Driver: Snippet result
     Driver->>Driver: Create task handle
     Driver-->>Nomad: Task started
     
     loop Health Checks
         Nomad->>Driver: InspectTask()
-        Driver->>Elide: Check process status
-        Elide-->>Driver: Status
+        Driver->>ElideDaemon: GetSnippetStatus(task_id)
+        ElideDaemon-->>Driver: Status (running, complete, failed)
         Driver-->>Nomad: Task healthy
     end
     
     User->>Nomad: Stop job
     Nomad->>Driver: StopTask()
-    Driver->>Elide: SIGTERM
-    Elide->>App: Graceful shutdown
-    App-->>Elide: Shutdown complete
-    Elide-->>Driver: Process exit
+    Driver->>ElideDaemon: CancelSnippet(task_id)
+    ElideDaemon->>Snippet: Cancel execution
+    Snippet-->>ElideDaemon: Cancelled
+    ElideDaemon-->>Driver: Snippet stopped
     Driver-->>Nomad: Task stopped
 ```
 
@@ -194,22 +239,28 @@ sequenceDiagram
 
 #### **MVP (Minimum Viable Product)**
 - [x] Driver plugin skeleton
+- [x] Architecture design (one daemon, multiple snippets)
+- [ ] **Feature request to Elide team** (daemon mode)
 - [ ] Load in Nomad without errors
-- [ ] Start simple Elide scripts (Python, JS)
+- [ ] Start Elide daemon (one per Nomad client)
+- [ ] Execute snippets in daemon (Python, JS, TS)
 - [ ] Capture stdout/stderr for logs
 - [ ] Report task completion/failure
-- [ ] Stop running tasks (SIGTERM)
+- [ ] Stop running tasks (cancel snippet)
 - [ ] Basic resource limits
+- [ ] **Temporary workaround** (if daemon mode not available yet)
 
-#### **V1.0**
-- [ ] gRPC socket communication
-- [ ] Resource monitoring (CPU, memory)
+#### **V1.0** (After Elide Daemon Mode Available)
+- [ ] gRPC daemon mode integration
+- [ ] ExecuteSnippet API implementation
+- [ ] Resource monitoring (CPU, memory) per daemon
 - [ ] Multi-language support configuration
 - [ ] Health checks via Elide APIs
 - [ ] Graceful shutdown handling
 - [ ] Task recovery after Nomad agent restart
 - [ ] Environment variable injection
 - [ ] Artifact download support
+- [ ] Concurrent snippet execution tracking
 
 #### **V2.0 (Future)**
 - [ ] AI workload-specific optimizations
@@ -1828,6 +1879,19 @@ resp, err := client.Fetch(ctx, &callapi.FetchRequest{
 - [ ] Volume mounting
 - [ ] Advanced scheduling hints
 - [ ] Production deployments
+
+---
+
+## Project Documentation
+
+This project includes additional documentation:
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Detailed architecture design and one-daemon approach
+- **[FEATURE_REQUEST.md](FEATURE_REQUEST.md)** - Feature request to Elide team for daemon mode
+- **[RESPONSIBILITIES.md](RESPONSIBILITIES.md)** - Responsibilities and dependencies breakdown
+- **[VERIFICATION.md](VERIFICATION.md)** - Verification results and assumptions
+- **[FINDINGS.md](FINDINGS.md)** - Codebase analysis findings
+- **[UNDERSTANDING.md](UNDERSTANDING.md)** - Architecture understanding confirmation
 
 ---
 

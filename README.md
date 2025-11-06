@@ -147,7 +147,7 @@ Back to Nomad
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Nomad Control Plane                       │
+│                    Nomad Control Plane                      │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │ Nomad Server (Scheduler)                               │ │
 │  │ - Job placement                                        │ │

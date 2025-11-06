@@ -590,8 +590,6 @@ session_config {
 }
 ```
 
-See `references/DARIO_FEEDBACK.md` and `references/SESSION_API.md` for more details.
-
 ### Task Configuration
 
 Tasks can specify either a `script` file path or inline `code`:
@@ -651,21 +649,8 @@ The driver is production-ready with a stubbed server. Here's what comes next:
 
 ### For Contributors
 
-**Code Quality:**
-- All core functionality is implemented and tested
-- Error handling uses proper wrapping for debugging
-- Session lifecycle management is robust
-- Language validation prevents misconfigurations
-
-**Testing:**
-- Unit tests: `go test ./tests/unit/...`
-- Integration tests: `go test ./tests/integration/...`
-- End-to-end tests: `./tests/scripts/test-end-to-end.sh`
-
 **Documentation:**
 - See `API_QUESTIONS.md` for undefined daemon features
-- See `references/OPTIMIZATION_FIXES.md` for recent improvements
-- See `references/SESSION_API.md` for session design details
 
 ### For Production Deployment
 

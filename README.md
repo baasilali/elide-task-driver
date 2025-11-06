@@ -11,6 +11,7 @@
 
 ## Table of Contents
 
+- [Current Status](#current-status)
 - [Overview](#overview)
 - [What is This?](#what-is-this)
 - [Architecture](#architecture)
@@ -18,12 +19,13 @@
 - [Prerequisites](#prerequisites)
 - [Project Structure](#project-structure)
 - [Quick Start](#quick-start)
-- [Implementation Guide](#implementation-guide)
+- [Session-Based Architecture](#session-based-architecture)
+- [What's Next](#whats-next)
 - [Communication Strategy](#communication-strategy)
 - [Testing](#testing)
 - [Example Job Specs](#example-job-specs)
 - [API Integration](#api-integration)
-- [Success Criteria](#success-criteria)
+- [Project Documentation](#project-documentation)
 - [Resources](#resources)
 - [Contributing](#contributing)
 
@@ -31,19 +33,19 @@
 
 ## Current Status
 
-**Status**: **Driver is fully functional and production-ready!** ✅
+**Status**: **Driver is fully functional and production-ready!**
 
 **Architecture**: Implemented **session-based API** with **one Elide daemon per Nomad client** running multiple code snippets in isolated sessions.
 
 **Implementation Status**:
-- ✅ **Session-based API** implemented (per Dario's feedback)
-- ✅ **gRPC proto spec** drafted with session management
-- ✅ **Stubbed gRPC server** created for testing
-- ✅ **Driver fully implemented** with session support
-- ✅ **End-to-end testing** successful with stubbed server
-- ✅ **Code optimizations complete** (November 2025)
-- ✅ **Production-ready** with proper resource management
-- 🎯 **Ready for real Elide daemon** (just swap in the real server)
+- **Session-based API** implemented (per Dario's feedback)
+- **gRPC proto spec** drafted with session management
+- **Stubbed gRPC server** created for testing
+- **Driver fully implemented** with session support
+- **End-to-end testing** successful with stubbed server
+- **Code optimizations complete** (November 2025)
+- **Production-ready** with proper resource management
+- **Ready for real Elide daemon** (just swap in the real server)
 
 **Key Features**:
 - **Session Isolation**: One session per Nomad client with isolated context pools
@@ -55,25 +57,25 @@
 - **Language Validation**: Tasks validated against session's enabled languages
 
 **What Works**:
-- ✅ Plugin loads in Nomad
-- ✅ Session creation on driver initialization (with unique IDs)
-- ✅ Task execution within sessions
-- ✅ Execution status polling
-- ✅ Task cancellation
-- ✅ Task recovery after restart
-- ✅ Clean shutdown with session cleanup
-- ✅ Language validation against session config
+- Plugin loads in Nomad
+- Session creation on driver initialization (with unique IDs)
+- Task execution within sessions
+- Execution status polling
+- Task cancellation
+- Task recovery after restart
+- Clean shutdown with session cleanup
+- Language validation against session config
 
 **Recent Improvements** (November 2025):
-- ✅ Fixed session cleanup on driver shutdown
-- ✅ Fixed session ID collisions for multi-client setups
-- ✅ Improved error handling with proper error wrapping
-- ✅ Added language validation against session configuration
-- ✅ Removed unused configuration options
-- ✅ Documented reserved features (see `references/API_QUESTIONS.md`)
-- ✅ Optimized memory usage (removed unused fields)
+- Fixed session cleanup on driver shutdown
+- Fixed session ID collisions for multi-client setups
+- Improved error handling with proper error wrapping
+- Added language validation against session configuration
+- Removed unused configuration options
+- Documented reserved features (see `API_QUESTIONS.md`)
+- Optimized memory usage (removed unused fields)
 
-**Note on Future Features**: Some features are currently blocked on the real Elide daemon API. See [`references/API_QUESTIONS.md`](references/API_QUESTIONS.md) for a comprehensive list of questions about undefined daemon features (resource metrics, signal forwarding, per-task config overrides, etc.). The driver is ready to integrate these features once the daemon API supports them.
+**Note on Future Features**: Some features are currently blocked on the real Elide daemon API. See [`API_QUESTIONS.md`](API_QUESTIONS.md) for a comprehensive list of questions about undefined daemon features (resource metrics, signal forwarding, per-task config overrides, etc.). The driver is ready to integrate these features once the daemon API supports them.
 
 ---
 
@@ -133,8 +135,8 @@ Back to Nomad
 
 | Approach | Overhead | Complexity | Elide Features | Resource Efficiency |
 |----------|----------|------------|----------------|---------------------|
-| **Docker + Elide** | High (container runtime) | Medium | All | ❌ Multiple containers |
-| **Raw Exec Driver** | Low | Low | No lifecycle management | ❌ Multiple processes |
+| **Docker + Elide** | High (container runtime) | Medium | All | Multiple containers |
+| **Raw Exec Driver** | Low | Low | No lifecycle management | Multiple processes |
 | **Elide Task Driver** | Minimal | Low | All + Nomad integration | **One daemon, multiple snippets** |
 
 ---
@@ -156,7 +158,7 @@ Back to Nomad
                 │ Plugin Protocol (gRPC)
                 ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                    Nomad Client Node                         │
+│                    Nomad Client Node                        │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │ Nomad Agent                                            │ │
 │  │ ┌──────────────────────────────────────────────────┐   │ │
@@ -183,20 +185,20 @@ Back to Nomad
 │  │ │ - Event publishing                               │   │ │
 │  │ └──────────────────────────────────────────────────┘   │ │
 │  │ ┌──────────────────────────────────────────────────┐   │ │
-│  │ │ Elide API Client (gRPC/HTTP)                       │   │ │
+│  │ │ Elide API Client (gRPC/HTTP)                     │   │ │
 │  │ │ - Proto-generated stubs                          │   │ │
 │  │ │ - Unix socket or TCP transport                   │   │ │
 │  │ └─────────────┬────────────────────────────────────┘   │ │
 │  └───────────────┼────────────────────────────────────────┘ │
-│                  │ Unix Socket / TCP / API                   │
+│                  │ Unix Socket / TCP / API                  │
 │                  ↓                                          │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │ Elide Daemon (Single Instance per Nomad Client)        │ │
 │  │ ┌──────────────────────────────────────────────────┐   │ │
 │  │ │ GraalVM Polyglot Engine (Shared Context)         │   │ │
-│  │ │ ┌────────────────┐  ┌────────────────┐          │   │ │
-│  │ │ │ Python VM      │  │ JavaScript VM  │          │   │ │
-│  │ │ └────────────────┘  └────────────────┘          │   │ │
+│  │ │ ┌────────────────┐  ┌────────────────┐           │   │ │
+│  │ │ │ Python VM      │  │ JavaScript VM  │           │   │ │
+│  │ │ └────────────────┘  └────────────────┘           │   │ │
 │  │ └──────────────────────────────────────────────────┘   │ │
 │  │ ┌──────────────────────────────────────────────────┐   │ │
 │  │ │ Elide Intrinsics (Shared)                        │   │ │
@@ -205,11 +207,11 @@ Back to Nomad
 │  │ │ - SQLite                                         │   │ │
 │  │ └──────────────────────────────────────────────────┘   │ │
 │  │ ┌──────────────────────────────────────────────────┐   │ │
-│  │ │ Multiple Task Snippets (Isolated Execution)     │   │ │
+│  │ │ Multiple Task Snippets (Isolated Execution)      │   │ │
 │  │ │ ├── Task 1: Python script                        │   │ │
-│  │ │ ├── Task 2: JavaScript snippet                  │   │ │
-│  │ │ ├── Task 3: TypeScript code                     │   │ │
-│  │ │ └── Task 4: Kotlin/Java code                    │   │ │
+│  │ │ ├── Task 2: JavaScript snippet                   │   │ │
+│  │ │ ├── Task 3: TypeScript code                      │   │ │
+│  │ │ └── Task 4: Kotlin/Java code                     │   │ │
 │  │ └──────────────────────────────────────────────────┘   │ │
 │  └────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
@@ -266,46 +268,41 @@ sequenceDiagram
 
 ### Planned Features
 
-#### **MVP (Minimum Viable Product)** ✅ COMPLETE
-- [x] Driver plugin skeleton
-- [x] Architecture design (one daemon, multiple snippets)
-- [x] **Proto spec drafted** (session-based API)
-- [x] **Stubbed server created** for development
-- [x] Load in Nomad without errors
-- [x] Session creation on driver initialization
-- [x] Execute snippets in daemon (Python, JS, TS)
-- [x] Capture stdout/stderr for logs (via GetExecutionStatus)
-- [x] Report task completion/failure
-- [x] Stop running tasks (cancel snippet)
-- [x] Task recovery after Nomad agent restart
-- [x] Graceful shutdown handling (session cleanup)
-- [x] Language validation against session config
-- [x] Multi-language support configuration
-- [x] Health checks via Elide APIs
-- [x] Environment variable injection
-- [x] Code optimizations and cleanup
+### Current Capabilities
 
-#### **V1.0** (Waiting for Real Elide Daemon)
-- [x] gRPC daemon mode integration (ready, waiting for real daemon)
-- [x] ExecuteSnippet API implementation (working with stubbed server)
-- [ ] Resource monitoring (CPU, memory) per execution (see `references/API_QUESTIONS.md`)
-- [x] Multi-language support configuration
-- [x] Health checks via Elide APIs
-- [x] Graceful shutdown handling
-- [x] Task recovery after Nomad agent restart
-- [x] Environment variable injection
-- [ ] Artifact download support (Nomad handles this)
-- [x] Concurrent snippet execution tracking
-- [ ] Signal forwarding to executions (see `references/API_QUESTIONS.md`)
-- [ ] Per-task configuration overrides (see `references/API_QUESTIONS.md`)
+**Production-Ready Features**:
+- Driver plugin architecture and lifecycle management
+- Session-based API with one daemon per Nomad client
+- Proto spec with session management
+- Stubbed server for development and testing
+- Plugin loads in Nomad without errors
+- Session creation on driver initialization with unique IDs
+- Execute code snippets (Python, JavaScript, TypeScript)
+- Capture stdout/stderr via GetExecutionStatus polling
+- Report task completion/failure with exit codes
+- Stop running tasks (cancel execution)
+- Task recovery after Nomad agent restart
+- Graceful shutdown with session cleanup
+- Language validation against session configuration
+- Multi-language support configuration
+- Health checks via daemon APIs
+- Environment variable injection
+- Concurrent snippet execution tracking
 
-#### **V2.0 (Future)**
-- [ ] AI workload-specific optimizations
-- [ ] Hot reload support
-- [ ] Metrics export (Prometheus format)
-- [ ] Integration with Nomad service mesh
-- [ ] Volume mounting
-- [ ] GPU support (if Elide adds it)
+**Features Blocked on Real Daemon**:
+- Resource monitoring (CPU, memory) per execution - see `API_QUESTIONS.md`
+- Signal forwarding to executions (SIGTERM, SIGINT) - see `API_QUESTIONS.md`
+- Per-task configuration overrides - see `API_QUESTIONS.md`
+- Real-time log streaming (currently polling-based) - see `API_QUESTIONS.md`
+- Execution timeout enforcement - see `API_QUESTIONS.md`
+
+**Future Enhancements (V2.0)**:
+- AI workload-specific optimizations
+- Hot reload support
+- Metrics export (Prometheus format)
+- Integration with Nomad service mesh
+- Volume mounting
+- GPU support (when Elide adds it)
 
 ---
 
@@ -376,57 +373,78 @@ elide --version  # Should show v1.0.0-beta9+
 elide-task-driver/
 │
 ├── README.md                   # This file
+├── API_QUESTIONS.md            # Questions about undefined daemon features
 ├── go.mod                      # Go module definition
 ├── go.sum                      # Dependency checksums
 ├── Makefile                    # Build automation
-├── LICENSE                     # Apache 2.0 license
 │
 ├── main.go                     # Plugin entry point
-│   └── Initializes and serves the driver plugin
 │
 ├── driver/                     # Core driver implementation
-│   ├── driver.go              # Main driver struct and interface
+│   ├── driver.go              # Main driver interface and lifecycle
 │   ├── config.go              # Configuration parsing and validation
 │   ├── handle.go              # Task handle (running task state)
-│   ├── elide.go               # Elide-specific execution logic
-│   ├── stats.go               # Resource usage collection
-│   └── fingerprint.go         # Driver capability detection
+│   ├── state.go               # Task state persistence
+│   └── daemon_client.go       # gRPC client for Elide daemon
+│
+├── cmd/                        # Command-line tools
+│   ├── server/                # Stubbed gRPC server
+│   │   └── main.go            # Mock daemon for development
+│   └── test-client/           # Test client for daemon
+│       └── main.go            # Manual testing tool
 │
 ├── proto/                      # Protocol Buffer definitions
 │   ├── buf.yaml               # Buf configuration
 │   ├── buf.gen.yaml           # Code generation config
-│   ├── buf.lock               # Dependency lock file
+│   ├── elide/                 # Proto definitions
+│   │   └── daemon/
+│   │       └── v1alpha1/
+│   │           └── execution_api.proto  # Session-based API spec
 │   └── gen/                   # Generated Go code (gitignored)
 │       └── go/
 │           └── elide/
-│               ├── call/
-│               ├── control/
-│               └── tools/
+│               └── daemon/
+│                   └── v1alpha1/
 │
 ├── examples/                   # Example Nomad job specifications
 │   ├── hello-python.nomad     # Simple Python script
-│   ├── hello-javascript.nomad # Simple JS script
 │   ├── http-server.nomad      # Web server example
 │   ├── ai-inference.nomad     # Local AI workload
-│   └── polyglot.nomad         # Multi-language app
+│   ├── polyglot.nomad         # Multi-language app
+│   ├── interactive-demo.go    # Interactive session demo
+│   ├── session-lifecycle-demo.go  # Session lifecycle example
+│   └── multiple-sessions-demo.go  # Multi-session example
+│
+├── example/                    # Configuration examples
+│   └── agent.hcl              # Nomad agent config
 │
 ├── tests/                      # Test suite
-│   ├── driver_test.go         # Unit tests for driver
-│   ├── integration_test.go    # Integration tests with Elide
-│   ├── e2e_test.go            # End-to-end tests with Nomad
-│   └── fixtures/              # Test fixtures (scripts, configs)
+│   ├── unit/                  # Unit tests
+│   │   ├── config_test.go     # Configuration tests
+│   │   ├── handle_test.go     # Task handle tests
+│   │   └── state_test.go      # State persistence tests
+│   ├── integration/           # Integration tests
+│   │   └── driver_test.go     # Driver integration tests
+│   ├── helpers/               # Test helpers
+│   │   └── mock_daemon_client.go  # Mock client for testing
+│   └── scripts/               # Test scripts
+│       ├── test-end-to-end.sh     # E2E test script
+│       └── test-integration.sh    # Integration test script
 │
 ├── scripts/                    # Build and development scripts
-│   ├── build.sh               # Build the plugin
-│   ├── install.sh             # Install to Nomad plugin directory
-│   ├── test-local.sh          # Run local tests
-│   └── gen-proto.sh           # Generate proto code
+│   ├── check-daemon.sh        # Check daemon status
+│   ├── monitor-daemon.sh      # Monitor daemon logs
+│   ├── test-daemon.sh         # Test daemon connectivity
+│   ├── setup-demo.sh          # Set up demo environment
+│   └── teardown-demo.sh       # Clean up demo
 │
-└── docs/                       # Additional documentation
-    ├── ARCHITECTURE.md        # Detailed architecture docs
-    ├── API.md                 # API usage examples
-    └── DEVELOPMENT.md         # Development guide
-```
+├── build/                      # Build artifacts (gitignored)
+│   └── plugins/
+│       └── elide-task-driver  # Compiled plugin binary
+│
+├── docs/                       # Additional documentation
+│   └── API_QUESTIONS.md       # API questions (also at root)
+
 
 ---
 
@@ -605,7 +623,7 @@ task "example" {
     
     # NOTE: elide_opts are reserved for future use when daemon supports
     # per-task configuration overrides. Currently, all tasks use session-level
-    # configuration. See references/API_QUESTIONS.md for details.
+    # configuration. See API_QUESTIONS.md for details.
   }
 }
 ```
@@ -617,531 +635,71 @@ task "example" {
 
 ---
 
-## Implementation Guide
+## What's Next
 
-### Phase 1: Core Driver Interface (Week 1-2)
+The driver is production-ready with a stubbed server. Here's what comes next:
 
-#### Key Methods to Implement
+### Integration with Real Elide Daemon
 
-##### **1. StartTask** - Most Important Method
+**Prerequisites:**
+1. Elide daemon must implement the session-based ExecutionAPI (see `proto/elide/daemon/v1alpha1/execution_api.proto`)
+2. Daemon must support Unix socket communication with gRPC
+3. API questions documented in `API_QUESTIONS.md` need answers
 
-```go
-// StartTask launches a new Elide runtime instance
-func (d *ElideDriver) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
-    d.logger.Info("starting task", "task_id", cfg.ID)
-    
-    // 1. Decode task configuration
-    var taskConfig TaskConfig
-    if err := cfg.DecodeDriverConfig(&taskConfig); err != nil {
-        return nil, nil, fmt.Errorf("failed to decode config: %v", err)
-    }
-    
-    // 2. Validate configuration
-    if err := taskConfig.Validate(); err != nil {
-        return nil, nil, fmt.Errorf("invalid config: %w", err)
-    }
-    
-    // 3. Validate language against session's enabled languages
-    enabledLanguages := d.config.SessionConfig.EnabledLanguages
-    if len(enabledLanguages) == 0 {
-        enabledLanguages = []string{"python", "javascript", "typescript"} // defaults
-    }
-    if err := taskConfig.ValidateLanguage(enabledLanguages); err != nil {
-        return nil, nil, fmt.Errorf("language validation failed: %w", err)
-    }
-    
-    // 4. Read script code (either from file or use inline code)
-    var code string
-    if taskConfig.Code != "" {
-        code = taskConfig.Code
-    } else if taskConfig.Script != "" {
-        scriptPath := filepath.Join(cfg.TaskDir().Dir, taskConfig.Script)
-        codeBytes, err := os.ReadFile(scriptPath)
-    if err != nil {
-            return nil, nil, fmt.Errorf("failed to read script file: %w", err)
-    }
-        code = string(codeBytes)
-    } else {
-        return nil, nil, fmt.Errorf("either 'script' or 'code' must be specified")
-    }
-    
-    // 5. Call ExecuteSnippet gRPC within session
-    resp, err := d.daemonClient.ExecuteSnippet(
-        context.Background(),
-        d.sessionID,
-        cfg.ID,
-        code,
-        taskConfig.Language,
-        taskConfig.Env,
-        taskConfig.Args,
-    )
-    if err != nil {
-        return nil, nil, fmt.Errorf("failed to execute snippet: %w", err)
-    }
-    
-    // 6. Create task handle
-    handle := drivers.NewTaskHandle(taskHandleVersion)
-    handle.Config = cfg
-    
-    h := &taskHandle{
-        executionId: resp.ExecutionId,
-        sessionId:   d.sessionID,
-        taskConfig:  cfg,
-        startedAt:   time.Now(),
-        status:      resp.Status.String(),
-        logger:      d.logger.With("task_id", cfg.ID),
-    }
-    
-    // 7. Store handle and return
-    driverState := TaskState{
-        ExecutionId: resp.ExecutionId,
-        SessionId:   d.sessionID,
-        TaskConfig:  cfg,
-        StartedAt:   h.startedAt,
-    }
-    if err := handle.SetDriverState(&driverState); err != nil {
-        return nil, nil, fmt.Errorf("failed to set driver state: %w", err)
-    }
-    d.tasks.Set(cfg.ID, h)
-    
-    d.logger.Info("task started", "task_id", cfg.ID, "execution_id", resp.ExecutionId, "session_id", d.sessionID)
-    return handle, nil, nil
-}
-```
+**Migration Steps:**
+1. Replace the stubbed server (`cmd/server/main.go`) with the real Elide daemon
+2. Update daemon socket path in driver configuration if needed
+3. Test with real daemon to validate API compatibility
+4. Implement any daemon-specific features that become available (resource metrics, signal forwarding, etc.)
+5. See `references/MIGRATION_GUIDE.md` for detailed migration steps
 
-##### **2. StopTask** - Graceful Shutdown
+### For Contributors
 
-```go
-func (d *ElideDriver) StopTask(taskID string, timeout time.Duration, signal string) error {
-    d.logger.Info("stopping task", "task_id", taskID)
-    
-    handle, ok := d.tasks[taskID]
-    if !ok {
-        return fmt.Errorf("task not found: %s", taskID)
-    }
-    
-    // Send signal to process
-    sig := syscall.SIGTERM
-    if signal != "" {
-        // Parse signal string if provided
-        sig = parseSignal(signal)
-    }
-    
-    if err := handle.command.Process.Signal(sig); err != nil {
-        return fmt.Errorf("failed to signal process: %v", err)
-    }
-    
-    // Wait for graceful shutdown with timeout
-    done := make(chan error, 1)
-    go func() {
-        done <- handle.command.Wait()
-    }()
-    
-    select {
-    case <-time.After(timeout):
-        // Timeout - force kill
-        d.logger.Warn("task did not stop gracefully, killing", "task_id", taskID)
-        handle.command.Process.Kill()
-        return fmt.Errorf("task did not stop within timeout")
-    case err := <-done:
-        d.logger.Info("task stopped", "task_id", taskID, "error", err)
-        return nil
-    }
-}
-```
+**Code Quality:**
+- All core functionality is implemented and tested
+- Error handling uses proper wrapping for debugging
+- Session lifecycle management is robust
+- Language validation prevents misconfigurations
 
-##### **3. InspectTask** - Status Reporting
+**Testing:**
+- Unit tests: `go test ./tests/unit/...`
+- Integration tests: `go test ./tests/integration/...`
+- End-to-end tests: `./tests/scripts/test-end-to-end.sh`
 
-```go
-func (d *ElideDriver) InspectTask(taskID string) (*drivers.TaskStatus, error) {
-    handle, ok := d.tasks[taskID]
-    if !ok {
-        return nil, drivers.ErrTaskNotFound
-    }
-    
-    status := &drivers.TaskStatus{
-        ID:          taskID,
-        Name:        handle.taskName,
-        State:       handle.getState(),
-        StartedAt:   handle.startedAt,
-        CompletedAt: handle.completedAt,
-        ExitResult:  handle.exitResult,
-        DriverAttributes: map[string]string{
-            "pid":     fmt.Sprintf("%d", handle.pid),
-            "version": pluginVersion,
-        },
-    }
-    
-    return status, nil
-}
-```
+**Documentation:**
+- See `API_QUESTIONS.md` for undefined daemon features
+- See `references/OPTIMIZATION_FIXES.md` for recent improvements
+- See `references/SESSION_API.md` for session design details
 
-##### **4. TaskStats** - Resource Monitoring
+### For Production Deployment
 
-```go
-func (d *ElideDriver) TaskStats(ctx context.Context, taskID string, interval time.Duration) (<-chan *drivers.TaskResourceUsage, error) {
-    handle, ok := d.tasks[taskID]
-    if !ok {
-        return nil, drivers.ErrTaskNotFound
-    }
-    
-    ch := make(chan *drivers.TaskResourceUsage)
-    go handle.emitStats(ctx, ch, interval)
-    
-    return ch, nil
-}
-```
+**Current Readiness:**
+- Driver is fully functional with stubbed server
+- Can be deployed to Nomad clusters today for testing
+- All task lifecycle operations work (start, stop, recover)
+- Session management is production-ready
 
-### Phase 2: Configuration (Week 2)
+**Before Production Use:**
+1. Replace stubbed server with real Elide daemon
+2. Validate resource metrics if needed (blocked on daemon API)
+3. Test signal forwarding if needed (blocked on daemon API)
+4. Review security configurations (socket permissions, etc.)
+5. Set up monitoring and logging
 
-#### Driver Configuration
+**Deployment:**
+- Copy plugin binary to `/opt/nomad/plugins/`
+- Configure in Nomad agent config (see `example/agent.hcl`)
+- Start daemon on each Nomad client node
+- Deploy job specs (see `examples/` directory)
 
-Create `driver/config.go`:
+### Implementation Reference
 
-```go
-package driver
-
-import "github.com/hashicorp/nomad/plugins/shared/hclspec"
-
-var (
-    // configSpec is the HCL specification for the driver config
-    configSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-        "enabled": hclspec.NewDefault(
-            hclspec.NewAttr("enabled", "bool", false),
-            hclspec.NewLiteral("true"),
-        ),
-        "elide_binary": hclspec.NewDefault(
-            hclspec.NewAttr("elide_binary", "string", false),
-            hclspec.NewLiteral(`"/usr/local/bin/elide"`),
-        ),
-    })
-    
-    // taskConfigSpec is the HCL specification for task config
-    taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-        "script": hclspec.NewAttr("script", "string", true),
-        "args": hclspec.NewAttr("args", "list(string)", false),
-        "env": hclspec.NewAttr("env", "map(string)", false),
-        "elide_opts": hclspec.NewBlock("elide_opts", false, hclspec.NewObject(map[string]*hclspec.Spec{
-            "elide_binary": hclspec.NewAttr("elide_binary", "string", false),
-            "languages": hclspec.NewAttr("languages", "list(string)", false),
-            "memory_limit": hclspec.NewAttr("memory_limit", "number", false),
-            "enable_ai": hclspec.NewAttr("enable_ai", "bool", false),
-        })),
-    })
-)
-
-// Config is the driver configuration set by the agent
-type Config struct {
-    Enabled      bool   `codec:"enabled"`
-    ElideBinary  string `codec:"elide_binary"`
-}
-
-// TaskConfig is the per-task configuration
-type TaskConfig struct {
-    // Path to the Elide script or application
-    Script string `codec:"script"`
-    
-    // Arguments to pass to the script
-    Args []string `codec:"args"`
-    
-    // Environment variables
-    Env map[string]string `codec:"env"`
-    
-    // Elide-specific options
-    ElideOpts ElideOptions `codec:"elide_opts"`
-}
-
-// ElideOptions contains Elide-specific configuration
-type ElideOptions struct {
-    // Path to elide binary (overrides driver config)
-    ElideBinary string `codec:"elide_binary"`
-    
-    // Guest languages to enable (e.g., ["python", "javascript"])
-    Languages []string `codec:"languages"`
-    
-    // Memory limit for the VM in MB
-    MemoryLimit int `codec:"memory_limit"`
-    
-    // Enable local AI inference
-    EnableAI bool `codec:"enable_ai"`
-}
-
-// Validate checks if the task configuration is valid
-func (tc *TaskConfig) Validate() error {
-    if tc.Script == "" && tc.Code == "" {
-        return fmt.Errorf("either 'script' or 'code' must be specified")
-    }
-    if tc.Script != "" && tc.Code != "" {
-        return fmt.Errorf("cannot specify both 'script' and 'code'")
-    }
-    if tc.Language == "" {
-        return fmt.Errorf("language must be specified")
-    }
-    return nil
-}
-
-// ValidateLanguage checks if the requested language is enabled in the session configuration
-func (tc *TaskConfig) ValidateLanguage(enabledLanguages []string) error {
-    for _, lang := range enabledLanguages {
-        if tc.Language == lang {
-    return nil
-        }
-    }
-    return fmt.Errorf("language %q not enabled in session (enabled: %v)", tc.Language, enabledLanguages)
-}
-```
-
-#### Task Handle
-
-Create `driver/handle.go`:
-
-```go
-package driver
-
-import (
-    "bufio"
-    "io"
-    "os/exec"
-    "time"
-    
-    "github.com/hashicorp/go-hclog"
-    "github.com/hashicorp/nomad/plugins/drivers"
-)
-
-// TaskHandle stores runtime information for a running task
-type TaskHandle struct {
-    taskID      string
-    taskName    string
-    pid         int
-    command     *exec.Cmd
-    startedAt   time.Time
-    completedAt time.Time
-    exitResult  *drivers.ExitResult
-    logger      hclog.Logger
-    
-    // State management
-    stateLock sync.RWMutex
-    state     drivers.TaskState
-}
-
-// collectLogs reads from a pipe and logs the output
-func (h *TaskHandle) collectLogs(stream string, reader io.Reader) {
-    scanner := bufio.NewScanner(reader)
-    for scanner.Scan() {
-        line := scanner.Text()
-        h.logger.Info("task output", "stream", stream, "line", line)
-    }
-}
-
-// monitorExit waits for the process to exit and records the result
-func (h *TaskHandle) monitorExit() {
-    err := h.command.Wait()
-    
-    h.stateLock.Lock()
-    defer h.stateLock.Unlock()
-    
-    h.completedAt = time.Now()
-    h.state = drivers.TaskStateExited
-    
-    if err != nil {
-        if exitErr, ok := err.(*exec.ExitError); ok {
-            h.exitResult = &drivers.ExitResult{
-                ExitCode: exitErr.ExitCode(),
-                Signal:   0,
-                Err:      err,
-            }
-        } else {
-            h.exitResult = &drivers.ExitResult{
-                ExitCode: -1,
-                Err:      err,
-            }
-        }
-    } else {
-        h.exitResult = &drivers.ExitResult{
-            ExitCode: 0,
-        }
-    }
-    
-    h.logger.Info("task exited", "exit_code", h.exitResult.ExitCode)
-}
-
-// getState returns the current state of the task
-func (h *TaskHandle) getState() drivers.TaskState {
-    h.stateLock.RLock()
-    defer h.stateLock.RUnlock()
-    return h.state
-}
-
-// emitStats periodically collects and emits resource usage statistics
-func (h *TaskHandle) emitStats(ctx context.Context, ch chan *drivers.TaskResourceUsage, interval time.Duration) {
-    ticker := time.NewTicker(interval)
-    defer ticker.Stop()
-    defer close(ch)
-    
-    for {
-        select {
-        case <-ctx.Done():
-            return
-        case <-ticker.C:
-            stats, err := h.collectStats()
-            if err != nil {
-                h.logger.Warn("failed to collect stats", "error", err)
-                continue
-            }
-            
-            select {
-            case ch <- stats:
-            case <-ctx.Done():
-                return
-            }
-        }
-    }
-}
-
-// collectStats gathers current resource usage
-func (h *TaskHandle) collectStats() (*drivers.TaskResourceUsage, error) {
-    // TODO: Once daemon API exposes per-execution resource metrics, implement here
-    // See references/API_QUESTIONS.md for details on what's needed from daemon
-    // For now, return empty stats (daemon doesn't expose per-execution metrics yet)
-    return &drivers.TaskResourceUsage{
-        ResourceUsage: &drivers.ResourceUsage{
-            CpuStats: &drivers.CpuStats{
-                SystemMode: 0,
-                UserMode:   0,
-                TotalTicks: 0,
-            },
-            MemoryStats: &drivers.MemoryStats{
-                RSS:      0,
-                Cache:    0,
-                Swap:     0,
-                MaxUsage: 0,
-            },
-        },
-        Timestamp: time.Now().UnixNano(),
-    }, nil
-}
-```
-
-### Phase 3: Protocol Buffers Integration (Week 3)
-
-#### Set Up Buf
-
-Create `proto/buf.yaml`:
-```yaml
-version: v1
-
-name: buf.build/elide-dev/task-driver
-
-deps:
-  # Depend on published Elide protos
-  - buf.build/elide/elide
-
-build:
-  excludes:
-    - gen
-    - vendor
-
-lint:
-  use:
-    - DEFAULT
-```
-
-Create `proto/buf.gen.yaml`:
-```yaml
-version: v1
-
-managed:
-  enabled: true
-  go_package_prefix:
-    default: github.com/elide-dev/elide-task-driver/proto/gen/go
-
-plugins:
-  # Generate Go code
-  - plugin: go
-    out: gen/go
-    opt:
-      - paths=source_relative
-      
-  # Generate gRPC service stubs
-  - plugin: go-grpc
-    out: gen/go
-    opt:
-      - paths=source_relative
-```
-
-#### Generate Proto Code
-
-Create `scripts/gen-proto.sh`:
-```bash
-#!/bin/bash
-set -e
-
-cd proto
-
-# Update dependencies
-buf dep update
-
-# Generate Go code from Elide protos
-buf generate --path ../elide/packages/proto
-
-echo "Proto code generated successfully"
-```
-
-#### Use Generated APIs
-
-Create `driver/elide.go`:
-```go
-package driver
-
-import (
-    "context"
-    "fmt"
-    "net"
-    
-    callapi "github.com/elide-dev/elide-task-driver/proto/gen/go/elide/call/v1alpha1"
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/credentials/insecure"
-)
-
-// ElideClient wraps gRPC communication with Elide runtime
-type ElideClient struct {
-    conn       *grpc.ClientConn
-    callClient callapi.InvocationApiClient
-}
-
-// NewElideClient creates a client connected to Elide via Unix socket
-func NewElideClient(socketPath string) (*ElideClient, error) {
-    // Create Unix socket dialer
-    dialer := func(ctx context.Context, addr string) (net.Conn, error) {
-        return net.Dial("unix", addr)
-    }
-    
-    // Connect via gRPC
-    conn, err := grpc.Dial(
-        socketPath,
-        grpc.WithTransportCredentials(insecure.NewCredentials()),
-        grpc.WithContextDialer(dialer),
-    )
-    if err != nil {
-        return nil, fmt.Errorf("failed to connect to elide: %v", err)
-    }
-    
-    return &ElideClient{
-        conn:       conn,
-        callClient: callapi.NewInvocationApiClient(conn),
-    }, nil
-}
-
-// Fetch invokes an HTTP-style handler in the Elide application
-func (c *ElideClient) Fetch(ctx context.Context, req *callapi.FetchRequest) (*callapi.FetchResponse, error) {
-    return c.callClient.Fetch(ctx, req)
-}
-
-// Close closes the gRPC connection
-func (c *ElideClient) Close() error {
-    return c.conn.Close()
-}
-```
+**For understanding the codebase:**
+- **Driver Core**: `driver/driver.go` - Main plugin implementation
+- **Configuration**: `driver/config.go` - HCL specs and validation
+- **Task Lifecycle**: `driver/handle.go` - Task runtime management
+- **gRPC Client**: `driver/daemon_client.go` - Daemon communication
+- **Proto Spec**: `proto/elide/daemon/v1alpha1/execution_api.proto` - API contract
 
 ---
 
@@ -1239,7 +797,7 @@ func waitForSocket(path string, timeout time.Duration) error {
 }
 ```
 
-#### Step 2: Create gRPC Client (Already Implemented in Phase 3)
+#### Step 2: Create gRPC Client (Already Implemented)
 
 The `ElideClient` from `driver/elide.go` handles the connection:
 
@@ -1601,7 +1159,7 @@ job "hello-python" {
         
         # NOTE: elide_opts are reserved for future use when daemon supports
         # per-task configuration overrides. Currently, all tasks use session-level
-        # configuration. See references/API_QUESTIONS.md for details.
+        # configuration. See API_QUESTIONS.md for details.
         # elide_opts {
         #   memory_limit = 128
         #   enable_ai    = false
@@ -1659,7 +1217,7 @@ job "elide-web" {
         
         # NOTE: elide_opts are reserved for future use when daemon supports
         # per-task configuration overrides. Currently, all tasks use session-level
-        # configuration. See references/API_QUESTIONS.md for details.
+        # configuration. See API_QUESTIONS.md for details.
         # elide_opts {
         #   memory_limit = 512
         #   enable_ai    = false
@@ -1713,7 +1271,7 @@ job "ai-worker" {
         # NOTE: elide_opts are reserved for future use when daemon supports
         # per-task configuration overrides. Currently, all tasks use session-level
         # configuration. For AI features, ensure enable_ai = true in session_config.
-        # See references/API_QUESTIONS.md for details.
+        # See API_QUESTIONS.md for details.
         # elide_opts {
         #   memory_limit = 2048
         #   enable_ai    = true
@@ -1772,7 +1330,7 @@ job "polyglot-demo" {
         # NOTE: elide_opts are reserved for future use when daemon supports
         # per-task configuration overrides. Currently, all tasks use session-level
         # configuration. Ensure all needed languages are in session's enabled_languages.
-        # See references/API_QUESTIONS.md for details.
+        # See API_QUESTIONS.md for details.
         # elide_opts {
         #   memory_limit = 1024
         # }
@@ -1863,69 +1421,12 @@ resp, err := client.Fetch(ctx, &callapi.FetchRequest{
 
 ---
 
-## Success Criteria
-
-### MVP Checklist
-
-#### Week 1-2: Foundation
-- [ ] Project structure created
-- [ ] Go module initialized
-- [ ] Dependencies installed
-- [ ] Skeleton driver compiles
-- [ ] Loads in Nomad without errors
-- [ ] Basic logging works
-
-#### Week 3-4: Core Functionality
-- [ ] Can start simple Python script
-- [ ] Can start simple JavaScript script
-- [ ] Captures stdout/stderr
-- [ ] Reports task started event
-- [ ] Reports task completed event
-- [ ] Can stop running task with SIGTERM
-- [ ] Task status reporting works
-- [ ] Basic error handling
-
-#### Week 5-6: Integration
-- [ ] Proto code generation works
-- [ ] gRPC client connects to Elide (if using socket)
-- [ ] Environment variables passed correctly
-- [ ] Artifact downloads work
-- [ ] Resource limits applied
-- [ ] Unit tests passing
-- [ ] Integration tests passing
-
-### V1.0 Checklist
-
-- [ ] Unix socket communication
-- [ ] gRPC service calls working
-- [ ] Health checks implemented
-- [ ] Graceful shutdown (SIGTERM handling)
-- [ ] Task recovery after driver restart
-- [ ] Resource monitoring (CPU, memory)
-- [ ] Multi-language configuration
-- [ ] Full test coverage (>80%)
-- [ ] E2E tests with Nomad
-- [ ] Documentation complete
-- [ ] Example jobs tested
-
-### V2.0 Goals
-
-- [ ] AI workload optimizations
-- [ ] Hot reload support
-- [ ] Metrics export (Prometheus)
-- [ ] Nomad service mesh integration
-- [ ] Volume mounting
-- [ ] Advanced scheduling hints
-- [ ] Production deployments
-
----
-
 ## Project Documentation
 
 This project includes additional documentation:
 
 ### Core Documentation
-- **[references/API_QUESTIONS.md](references/API_QUESTIONS.md)** - Questions for Elide team about undefined daemon features (resource metrics, signal forwarding, per-task config, etc.)
+- **[API_QUESTIONS.md](API_QUESTIONS.md)** - Questions for Elide team about undefined daemon features (resource metrics, signal forwarding, per-task config, etc.)
 - **[references/OPTIMIZATION_FIXES.md](references/OPTIMIZATION_FIXES.md)** - Complete list of recent optimizations and fixes (November 2025)
 - **[references/SESSION_API.md](references/SESSION_API.md)** - Session-based API documentation
 - **[references/MIGRATION_GUIDE.md](references/MIGRATION_GUIDE.md)** - Guide for migrating from stubbed server to real daemon

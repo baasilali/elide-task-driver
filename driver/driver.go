@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -37,6 +38,12 @@ const (
 	// taskHandleVersion is the version of task handle which this plugin sets
 	// and understands how to decode
 	taskHandleVersion = 1
+
+	// executeSnippetTimeout is the default timeout for ExecuteSnippet RPCs.
+	executeSnippetTimeout = 10 * time.Second
+
+	// statusRequestTimeout is the default timeout for status polling RPCs.
+	statusRequestTimeout = 5 * time.Second
 )
 
 var (
@@ -78,6 +85,9 @@ type ElideDriverPlugin struct {
 
 	// sessionID is the session ID for this Nomad client (one session per client)
 	sessionID string
+
+	// sessionLock serializes session initialization.
+	sessionLock sync.Mutex
 
 	// ctx is the context for the driver
 	ctx context.Context
@@ -282,8 +292,11 @@ func (d *ElideDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHan
 	}
 
 	// Call ExecuteSnippet gRPC within session
+	execCtx, cancel := d.withTimeout(context.Background(), executeSnippetTimeout)
+	defer cancel()
+
 	resp, err := d.daemonClient.ExecuteSnippet(
-		context.Background(),
+		execCtx,
 		d.sessionID,
 		cfg.ID,
 		code,
@@ -350,7 +363,9 @@ func (d *ElideDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	}
 
 	// Check execution status
-	statusResp, err := d.daemonClient.GetExecutionStatus(context.Background(), taskState.SessionId, taskState.ExecutionId)
+	statusCtx, cancel := d.withTimeout(context.Background(), statusRequestTimeout)
+	statusResp, err := d.daemonClient.GetExecutionStatus(statusCtx, taskState.SessionId, taskState.ExecutionId)
+	cancel()
 	if err != nil {
 		return fmt.Errorf("failed to get execution status: %w", err)
 	}
@@ -405,7 +420,9 @@ func (d *ElideDriverPlugin) handleWait(ctx context.Context, handle *taskHandle, 
 		case <-d.ctx.Done():
 			return
 		case <-ticker.C:
-			statusResp, err := d.daemonClient.GetExecutionStatus(ctx, handle.sessionId, handle.executionId)
+			statusCtx, cancel := d.withTimeout(ctx, statusRequestTimeout)
+			statusResp, err := d.daemonClient.GetExecutionStatus(statusCtx, handle.sessionId, handle.executionId)
+			cancel()
 			if err != nil {
 				ch <- &drivers.ExitResult{
 					Err: fmt.Errorf("failed to get execution status: %w", err),
@@ -562,10 +579,29 @@ func (d *ElideDriverPlugin) Shutdown() {
 	d.signalShutdown()
 }
 
+func (d *ElideDriverPlugin) withTimeout(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+
+	if timeout <= 0 {
+		return context.WithCancel(parent)
+	}
+
+	return context.WithTimeout(parent, timeout)
+}
+
 func (d *ElideDriverPlugin) ensureSession(ctx context.Context) error {
 	if d.daemonClient == nil {
 		return errors.New("daemon client not initialized")
 	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	d.sessionLock.Lock()
+	defer d.sessionLock.Unlock()
 
 	if d.sessionID != "" {
 		return nil

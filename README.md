@@ -442,10 +442,8 @@ elide-task-driver/
 │
 ├── docs/                       # Additional documentation
 │   └── API_QUESTIONS.md       # API questions (also at root)
-
-
 ---
-
+```
 ## Quick Start
 
 ### Prerequisites

@@ -63,9 +63,9 @@ func (m *MockDaemonClient) GetSession(ctx context.Context, sessionID string) (*p
 	}
 
 	return &pb.GetSessionResponse{
-		SessionId:     sessionID,
-		Status:        pb.SessionStatus_SESSION_STATUS_ACTIVE,
-		Configuration: config,
+		SessionId: sessionID,
+		Status:    pb.SessionStatus_SESSION_STATUS_ACTIVE,
+		Config:    config,
 	}, nil
 }
 

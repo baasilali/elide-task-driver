@@ -1,6 +1,6 @@
 # Nomad agent configuration for testing with Elide driver
 
-plugin_dir = "/Users/baasilali/workspace/nomad-driver/elide-task-driver/build/plugins"
+plugin_dir = "./build/plugins"
 
 plugin "elide" {
   config {

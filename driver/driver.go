@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -49,7 +50,7 @@ var (
 
 	// capabilities indicates what optional features this driver supports
 	capabilities = &drivers.Capabilities{
-		SendSignals: true,
+		SendSignals: false,
 		Exec:        false, // Not implementing exec for MVP
 		FSIsolation: drivers.FSIsolationNone,
 		NetIsolationModes: []drivers.NetIsolationMode{
@@ -142,51 +143,11 @@ func (d *ElideDriverPlugin) SetConfig(cfg *base.Config) error {
 		d.logger.Warn("daemon health check failed", "error", err)
 	}
 
-	// Create session for this Nomad client (one session per client)
-	// Generate unique session ID to avoid collisions between multiple Nomad clients
-	// Format: nomad-{hostname}-{timestamp} ensures uniqueness across clients
-	hostname, err := os.Hostname()
-	if err != nil {
-		hostname = "unknown"
-	}
-	sessionID := fmt.Sprintf("nomad-%s-%d", hostname, time.Now().Unix())
-
-	// Build session configuration from driver config
-	// Use defaults if not configured
-	contextPoolSize := d.config.SessionConfig.ContextPoolSize
-	if contextPoolSize == 0 {
-		contextPoolSize = 10
-	}
-	enabledLanguages := d.config.SessionConfig.EnabledLanguages
-	if len(enabledLanguages) == 0 {
-		enabledLanguages = []string{"python", "javascript", "typescript"}
-	}
-	enabledIntrinsics := d.config.SessionConfig.EnabledIntrinsics
-	if len(enabledIntrinsics) == 0 {
-		enabledIntrinsics = []string{"io", "env"}
-	}
-	memoryLimitMB := d.config.SessionConfig.MemoryLimitMB
-	if memoryLimitMB == 0 {
-		memoryLimitMB = 512
-	}
-
-	sessionConfig := &pb.SessionConfiguration{
-		ContextPoolSize:   uint32(contextPoolSize),
-		EnabledLanguages:  enabledLanguages,
-		EnabledIntrinsics: enabledIntrinsics,
-		MemoryLimitMb:     uint64(memoryLimitMB),
-		EnableAi:          d.config.SessionConfig.EnableAI,
-	}
-
-	// Create session (only if daemon is available)
-	_, sessionErr := d.daemonClient.CreateSession(context.Background(), sessionID, sessionConfig)
-	if sessionErr != nil {
-		// Don't fail SetConfig if daemon isn't available yet
-		// The fingerprint will report it as undetected
-		d.logger.Warn("failed to create session (daemon may not be running)", "error", sessionErr)
-	} else {
-		d.sessionID = sessionID
-		d.logger.Info("created session", "session_id", sessionID)
+	// Ensure session exists (one session per Nomad client)
+	if err := d.ensureSession(context.Background()); err != nil {
+		// Don't fail SetConfig if daemon isn't available yet.
+		// The fingerprint will report it as undetected.
+		d.logger.Warn("failed to initialize session (daemon may not be running yet)", "error", err)
 	}
 
 	return nil
@@ -295,9 +256,9 @@ func (d *ElideDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHan
 
 	d.logger.Info("starting task", "task_id", cfg.ID, "language", taskConfig.Language)
 
-	// Ensure session exists
-	if d.sessionID == "" {
-		return nil, nil, fmt.Errorf("session not initialized - driver not properly configured")
+	// Ensure session exists before starting task
+	if err := d.ensureSession(context.Background()); err != nil {
+		return nil, nil, fmt.Errorf("failed to ensure session: %w", err)
 	}
 
 	// Read script code (either from file or use inline code)
@@ -306,7 +267,11 @@ func (d *ElideDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHan
 	if taskConfig.Code != "" {
 		code = taskConfig.Code
 	} else if taskConfig.Script != "" {
-		scriptPath := filepath.Join(cfg.TaskDir().Dir, taskConfig.Script)
+		baseDir := filepath.Clean(cfg.TaskDir().Dir)
+		scriptPath := filepath.Clean(filepath.Join(baseDir, taskConfig.Script))
+		if !strings.HasPrefix(scriptPath, baseDir+string(os.PathSeparator)) && scriptPath != baseDir {
+			return nil, nil, fmt.Errorf("script path %q escapes task directory", taskConfig.Script)
+		}
 		codeBytes, err := os.ReadFile(scriptPath)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to read script file: %w", err)
@@ -595,4 +560,102 @@ func (d *ElideDriverPlugin) Shutdown() {
 
 	// Signal shutdown to all goroutines
 	d.signalShutdown()
+}
+
+func (d *ElideDriverPlugin) ensureSession(ctx context.Context) error {
+	if d.daemonClient == nil {
+		return errors.New("daemon client not initialized")
+	}
+
+	if d.sessionID != "" {
+		return nil
+	}
+
+	sessionID := d.generateSessionID()
+	sessionConfig := d.buildSessionConfig()
+
+	const attempts = 5
+	baseDelay := 200 * time.Millisecond
+	var lastErr error
+
+	for i := 0; i < attempts; i++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		createCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		resp, err := d.daemonClient.CreateSession(createCtx, sessionID, sessionConfig)
+		cancel()
+		if err == nil && resp != nil {
+			d.sessionID = resp.SessionId
+			d.logger.Info("created session", "session_id", d.sessionID, "attempt", i+1)
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+
+		getCtx, getCancel := context.WithTimeout(ctx, 3*time.Second)
+		getResp, getErr := d.daemonClient.GetSession(getCtx, sessionID)
+		getCancel()
+		if getErr == nil && getResp != nil {
+			d.sessionID = getResp.SessionId
+			d.logger.Info("reusing existing session", "session_id", d.sessionID)
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(i+1) * baseDelay):
+		}
+	}
+
+	if lastErr != nil {
+		return fmt.Errorf("failed to create session after retries: %w", lastErr)
+	}
+	return errors.New("failed to create or reuse session: unknown error")
+}
+
+func (d *ElideDriverPlugin) buildSessionConfig() *pb.SessionConfiguration {
+	contextPoolSize := d.config.SessionConfig.ContextPoolSize
+	if contextPoolSize == 0 {
+		contextPoolSize = 10
+	}
+
+	enabledLanguages := d.config.SessionConfig.EnabledLanguages
+	if len(enabledLanguages) == 0 {
+		enabledLanguages = []string{"python", "javascript", "typescript"}
+	}
+
+	enabledIntrinsics := d.config.SessionConfig.EnabledIntrinsics
+	if len(enabledIntrinsics) == 0 {
+		enabledIntrinsics = []string{"io", "env"}
+	}
+
+	memoryLimitMB := d.config.SessionConfig.MemoryLimitMB
+	if memoryLimitMB == 0 {
+		memoryLimitMB = 512
+	}
+
+	return &pb.SessionConfiguration{
+		ContextPoolSize:   uint32(contextPoolSize),
+		EnabledLanguages:  enabledLanguages,
+		EnabledIntrinsics: enabledIntrinsics,
+		MemoryLimitMb:     uint64(memoryLimitMB),
+		EnableAi:          d.config.SessionConfig.EnableAI,
+	}
+}
+
+func (d *ElideDriverPlugin) generateSessionID() string {
+	if d.sessionID != "" {
+		return d.sessionID
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		hostname = "unknown"
+	}
+
+	return fmt.Sprintf("nomad-%s", hostname)
 }

@@ -2,6 +2,8 @@ module github.com/elide-dev/elide-task-driver
 
 go 1.24.4
 
+toolchain go1.24.10
+
 // Fix error tidying due to Nomad downstream dependencies and the recent
 // migration of the metrics library.
 replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.3
@@ -9,7 +11,9 @@ replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.3
 require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/nomad v1.10.2
+	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.72.2
+	google.golang.org/protobuf v1.36.6
 )
 
 require (
@@ -119,9 +123,9 @@ require (
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.33.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250218202821-56aae31c358a // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.71 // indirect
 	oss.indeed.com/go/libtime v1.6.0 // indirect
 )

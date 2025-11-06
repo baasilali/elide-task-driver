@@ -502,8 +502,6 @@ You should see:
 
 ```bash
 cd /path/to/elide-task-driver
-
-# Start Nomad with the driver configuration
 nomad agent -dev -config=nomad-agent.hcl
 ```
 

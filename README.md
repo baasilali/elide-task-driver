@@ -266,8 +266,6 @@ sequenceDiagram
 
 ## Key Features
 
-### Planned Features
-
 ### Current Capabilities
 
 **Production-Ready Features**:

@@ -1476,67 +1476,12 @@ This project includes additional documentation:
 
 ---
 
-## Contributing
+```
 
-### Development Workflow
-
-1. **Fork the repository**
-2. **Create a feature branch**
-   ```bash
-   git checkout -b feature/my-feature
-   ```
-3. **Make changes and test**
-   ```bash
-   make test
-   ```
-4. **Commit with clear messages**
-   ```bash
-   git commit -m "Add support for X"
-   ```
-5. **Push and create PR**
-   ```bash
-   git push origin feature/my-feature
-   ```
-
-### Code Style
-
-- Follow Go conventions (use `gofmt`)
-- Add comments for exported functions
-- Write tests for new features
-- Update documentation
-
-### Testing Requirements
-
-- Unit tests must pass
-- Integration tests should pass (may skip in CI)
-- Add E2E test for major features
-
----
-
-## License
-
-This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
-
----
-
-## Acknowledgments
-
-- **HashiCorp**: For Nomad and the plugin framework
-- **Elide Team**: For the incredible polyglot runtime
-- **cneira**: For the firecracker-task-driver reference implementation
-
----
-
-## Support
-
-- **Elide Questions**: Check Elide docs or Discord
-- **Nomad Questions**: HashiCorp Discuss forum
-- **Driver Issues**: Open an issue on this repo
-- **Internal (Elide Team)**: Slack #task-driver channel
-
----
 
 **Built by the Elide team**
+
+-Baasil Ali
 
 *Junior Developer Guide - Updated November 4, 2025*
 

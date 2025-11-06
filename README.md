@@ -1449,6 +1449,47 @@ plugin "elide" {
 }
 ```
 
+### Switching to Real Elide Daemon
+
+When the real Elide daemon API is ready, **no code changes are needed**. Just update the configuration:
+
+**Before (Stubbed Server):**
+```hcl
+plugin "elide" {
+  config {
+    daemon_socket = "/tmp/elide-daemon.sock"  # Stubbed server
+    # ...
+  }
+}
+```
+
+**After (Real Elide Daemon):**
+```hcl
+plugin "elide" {
+  config {
+    daemon_socket = "/var/run/elide/elide-daemon.sock"  # Real daemon path
+    # OR use TCP:
+    # daemon_address = "127.0.0.1:50051"
+    
+    # Same session_config as before
+    session_config {
+      context_pool_size  = 10
+      enabled_languages  = ["python", "javascript", "typescript"]
+      enabled_intrinsics = ["io", "env"]
+      memory_limit_mb    = 512
+      enable_ai          = false
+    }
+  }
+}
+```
+
+**Changes needed:**
+1. Update `daemon_socket` path to match real Elide daemon location
+2. Start real Elide daemon instead of stubbed server
+3. Everything else stays the same!
+
+See `MIGRATION_GUIDE.md` for detailed migration instructions.
+
 ### Troubleshooting
 
 **Driver not appearing:**
@@ -1457,12 +1498,14 @@ plugin "elide" {
 3. Check Nomad logs for plugin loading errors
 
 **Connection errors:**
-1. Verify stubbed server is running: `ls -la /tmp/elide-daemon.sock`
-2. Check server logs in Terminal 1
+1. Verify daemon is running: `ls -la /tmp/elide-daemon.sock` (or real daemon path)
+2. Check daemon logs for errors
+3. Verify socket permissions allow Nomad to connect
 
 **Session creation fails:**
-1. Ensure stubbed server is running before starting Nomad
-2. Check daemon_socket path in config matches server
+1. Ensure daemon is running before starting Nomad
+2. Check `daemon_socket` path in config matches daemon location
+3. Verify daemon implements the session-based API
 
 ---
 

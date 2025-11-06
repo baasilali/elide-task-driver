@@ -19,9 +19,9 @@ type TaskState struct {
 	TaskConfig     *drivers.TaskConfig
 	StartedAt      time.Time
 
-	// TODO: Once daemon API is available, add:
-	// ExecutionId string  // Execution ID from Elide daemon (for recovery)
-	// DaemonSocket string // Daemon socket path (in case it changed)
+	// Execution tracking
+	ExecutionId string // Execution ID from Elide daemon (for recovery)
+	SessionId   string // Session ID (for recovery)
 }
 
 // taskStore provides a mechanism to store and retrieve task handles

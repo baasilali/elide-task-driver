@@ -1,0 +1,188 @@
+// Copyright (c) Elide Dev, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package elide.daemon.v1alpha1;
+
+option go_package = "github.com/elide-dev/elide-task-driver/proto/gen/go/elide/daemon/v1alpha1";
+
+// ExecutionApi provides session-based code snippet execution
+service ExecutionApi {
+  // CreateSession creates a new execution session with specific runtime configuration
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+
+  // GetSession retrieves information about an existing session
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+
+  // DeleteSession closes and cleans up a session
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse);
+
+  // ExecuteSnippet executes a code snippet within a session
+  rpc ExecuteSnippet(ExecuteSnippetRequest) returns (ExecuteSnippetResponse);
+
+  // GetExecutionStatus gets the current status of an execution
+  rpc GetExecutionStatus(GetExecutionStatusRequest) returns (GetExecutionStatusResponse);
+
+  // CancelExecution cancels a running execution
+  rpc CancelExecution(CancelExecutionRequest) returns (CancelExecutionResponse);
+
+  // Health checks if the daemon is healthy
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+// SessionConfiguration defines the runtime configuration for a session
+message SessionConfiguration {
+  // Context pool size - number of contexts to maintain in the pool
+  uint32 context_pool_size = 1;
+
+  // Enabled languages (e.g., ["python", "javascript", "typescript"])
+  repeated string enabled_languages = 2;
+
+  // Enabled intrinsics - minimal set of APIs available to code
+  // Start with smallest possible amount for sandbox guarantees
+  repeated string enabled_intrinsics = 3;
+
+  // Memory limit in MB
+  uint64 memory_limit_mb = 4;
+
+  // Enable AI features
+  bool enable_ai = 5;
+}
+
+// CreateSessionRequest creates a new execution session
+message CreateSessionRequest {
+  // Session ID (client-generated, must be unique)
+  string session_id = 1;
+
+  // Runtime configuration for this session
+  SessionConfiguration config = 2;
+}
+
+// CreateSessionResponse returns session information
+message CreateSessionResponse {
+  // Session ID
+  string session_id = 1;
+
+  // Session status
+  SessionStatus status = 2;
+
+  // Created timestamp
+  int64 created_at = 3;
+}
+
+// GetSessionRequest retrieves session information
+message GetSessionRequest {
+  string session_id = 1;
+}
+
+// GetSessionResponse returns session information
+message GetSessionResponse {
+  string session_id = 1;
+  SessionStatus status = 2;
+  SessionConfiguration config = 3;
+  int64 created_at = 4;
+}
+
+// DeleteSessionRequest closes a session
+message DeleteSessionRequest {
+  string session_id = 1;
+}
+
+// DeleteSessionResponse confirms session deletion
+message DeleteSessionResponse {
+  bool success = 1;
+}
+
+// ExecuteSnippetRequest executes a code snippet within a session
+message ExecuteSnippetRequest {
+  // Session ID (must be created via CreateSession first)
+  string session_id = 1;
+
+  // Execution ID (client-generated, must be unique within session)
+  string execution_id = 2;
+
+  // Code snippet to execute
+  string code = 3;
+
+  // Language: python, javascript, typescript
+  string language = 4;
+
+  // Environment variables
+  map<string, string> env = 5;
+
+  // Arguments to pass to script
+  repeated string args = 6;
+}
+
+// ExecuteSnippetResponse returns execution information
+message ExecuteSnippetResponse {
+  // Execution ID
+  string execution_id = 1;
+
+  // Session ID
+  string session_id = 2;
+
+  // Initial status
+  ExecutionStatus status = 3;
+}
+
+// GetExecutionStatusRequest gets execution status
+message GetExecutionStatusRequest {
+  // Session ID
+  string session_id = 1;
+
+  // Execution ID
+  string execution_id = 2;
+}
+
+// GetExecutionStatusResponse returns execution status
+message GetExecutionStatusResponse {
+  string execution_id = 1;
+  string session_id = 2;
+  ExecutionStatus status = 3;
+  bool complete = 4;
+  int32 exit_code = 5;
+  string stdout = 6;
+  string stderr = 7;
+  string error = 8;
+}
+
+// CancelExecutionRequest cancels an execution
+message CancelExecutionRequest {
+  string session_id = 1;
+  string execution_id = 2;
+}
+
+// CancelExecutionResponse confirms cancellation
+message CancelExecutionResponse {
+  bool success = 1;
+}
+
+// HealthRequest checks daemon health
+message HealthRequest {}
+
+// HealthResponse returns health status
+message HealthResponse {
+  bool healthy = 1;
+  string version = 2;
+}
+
+// SessionStatus represents the status of a session
+enum SessionStatus {
+  SESSION_STATUS_UNSPECIFIED = 0;
+  SESSION_STATUS_ACTIVE = 1;
+  SESSION_STATUS_CLOSED = 2;
+  SESSION_STATUS_ERROR = 3;
+}
+
+// ExecutionStatus represents the status of an execution
+enum ExecutionStatus {
+  EXECUTION_STATUS_UNSPECIFIED = 0;
+  EXECUTION_STATUS_QUEUED = 1;
+  EXECUTION_STATUS_RUNNING = 2;
+  EXECUTION_STATUS_COMPLETED = 3;
+  EXECUTION_STATUS_FAILED = 4;
+  EXECUTION_STATUS_CANCELLED = 5;
+}
+

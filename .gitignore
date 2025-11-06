@@ -33,6 +33,9 @@ Thumbs.db
 # Generated proto code (will be generated from Elide proto definitions)
 proto/gen/
 
+# Stubbed server socket
+/tmp/elide-daemon.sock
+
 # Nomad plugin directory
 /tmp/nomad-plugins/
 

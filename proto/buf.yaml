@@ -1,0 +1,15 @@
+version: v1
+
+name: buf.build/elide-dev/elide-task-driver
+
+deps: []
+
+build:
+  excludes:
+    - gen
+    - vendor
+
+lint:
+  use:
+    - DEFAULT
+

@@ -60,11 +60,29 @@ install: build
 	cp $(PLUGIN_DIR)/$(BINARY_NAME) /tmp/nomad-plugins/
 	@echo "Plugin installed to /tmp/nomad-plugins/$(BINARY_NAME)"
 
-# Generate proto code (when proto definitions are available)
+# Generate proto code
+.PHONY: proto
 proto:
 	@echo "Generating proto code..."
-	@echo "TODO: Implement once Elide proto definitions are available"
-	@echo "This will use protoc or buf to generate Go stubs from proto files"
+	@which buf > /dev/null || (echo "buf not installed. Install with: brew install bufbuild/buf/buf" && exit 1)
+	cd proto && buf generate
+	@echo "Proto code generated successfully"
+
+# Start stubbed server for testing
+server:
+	@echo "Starting stubbed gRPC server..."
+	@echo "Server will listen on /tmp/elide-daemon.sock (set ELIDE_DAEMON_SOCKET to override)"
+	$(GOCMD) run ./cmd/server/main.go
+
+# Test with stubbed server
+test-server:
+	@echo "Running tests with stubbed server..."
+	$(GOTEST) -v ./... -tags=integration
+
+# Test client for stubbed server
+test-client:
+	@echo "Running test client..."
+	$(GOCMD) run ./cmd/test-client/main.go
 
 # Development helpers
 dev-setup: deps

@@ -30,6 +30,29 @@ var (
 			hclspec.NewAttr("auto_start_daemon", "bool", false),
 			hclspec.NewLiteral("true"),
 		),
+		// Session configuration (one per Nomad client)
+		"session_config": hclspec.NewBlock("session_config", false, hclspec.NewObject(map[string]*hclspec.Spec{
+			"context_pool_size": hclspec.NewDefault(
+				hclspec.NewAttr("context_pool_size", "number", false),
+				hclspec.NewLiteral("10"),
+			),
+			"enabled_languages": hclspec.NewDefault(
+				hclspec.NewAttr("enabled_languages", "list(string)", false),
+				hclspec.NewLiteral(`["python", "javascript", "typescript"]`),
+			),
+			"enabled_intrinsics": hclspec.NewDefault(
+				hclspec.NewAttr("enabled_intrinsics", "list(string)", false),
+				hclspec.NewLiteral(`["io", "env"]`),
+			),
+			"memory_limit_mb": hclspec.NewDefault(
+				hclspec.NewAttr("memory_limit_mb", "number", false),
+				hclspec.NewLiteral("512"),
+			),
+			"enable_ai": hclspec.NewDefault(
+				hclspec.NewAttr("enable_ai", "bool", false),
+				hclspec.NewLiteral("false"),
+			),
+		})),
 	})
 
 	// taskConfigSpec is the HCL specification for task configuration
@@ -62,10 +85,20 @@ var (
 
 // Config is the driver configuration set by the Nomad agent
 type Config struct {
-	ElideBinary     string `codec:"elide_binary"`
-	DaemonSocket    string `codec:"daemon_socket"`
-	DaemonAddress   string `codec:"daemon_address"`
-	AutoStartDaemon bool   `codec:"auto_start_daemon"`
+	ElideBinary     string            `codec:"elide_binary"`
+	DaemonSocket    string            `codec:"daemon_socket"`
+	DaemonAddress   string            `codec:"daemon_address"`
+	AutoStartDaemon bool              `codec:"auto_start_daemon"`
+	SessionConfig   SessionConfig     `codec:"session_config"`
+}
+
+// SessionConfig is the session configuration
+type SessionConfig struct {
+	ContextPoolSize  int      `codec:"context_pool_size"`
+	EnabledLanguages []string `codec:"enabled_languages"`
+	EnabledIntrinsics []string `codec:"enabled_intrinsics"`
+	MemoryLimitMB    int      `codec:"memory_limit_mb"`
+	EnableAI         bool     `codec:"enable_ai"`
 }
 
 // TaskConfig is the per-task configuration

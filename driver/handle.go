@@ -22,10 +22,10 @@ type taskHandle struct {
 	completedAt time.Time
 	exitResult  *drivers.ExitResult
 
-	// TODO: Once daemon API is available, add:
-	// executionId string  // Execution ID from Elide daemon
-	// status      string  // Current execution status (running, completed, failed)
-	// daemonClient DaemonClient  // Reference to daemon client (if needed per-task)
+	// Execution tracking
+	executionId string // Execution ID from Elide daemon
+	sessionId  string // Session ID (one per Nomad client)
+	status     string // Current execution status (running, completed, failed)
 }
 
 // TaskStatus returns the current status of the task
@@ -50,8 +50,9 @@ func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
 		CompletedAt: h.completedAt,
 		ExitResult:  h.exitResult,
 		DriverAttributes: map[string]string{
-			// TODO: Add execution ID once daemon API is available
-			// "execution_id": h.executionId,
+			"execution_id": h.executionId,
+			"session_id":   h.sessionId,
+			"status":       h.status,
 		},
 	}
 }

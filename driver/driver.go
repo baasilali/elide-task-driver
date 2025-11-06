@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -15,6 +17,8 @@ import (
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
+
+	pb "github.com/elide-dev/elide-task-driver/proto/gen/go/elide/daemon/v1alpha1"
 )
 
 const (
@@ -69,8 +73,10 @@ type ElideDriverPlugin struct {
 	tasks *taskStore
 
 	// daemonClient is the gRPC client to the Elide daemon
-	// TODO: Initialize this once daemon API is available
 	daemonClient DaemonClient
+
+	// sessionID is the session ID for this Nomad client (one session per client)
+	sessionID string
 
 	// ctx is the context for the driver
 	ctx context.Context
@@ -124,14 +130,60 @@ func (d *ElideDriverPlugin) SetConfig(cfg *base.Config) error {
 		d.nomadConfig = cfg.AgentConfig.Driver
 	}
 
-	// TODO: Initialize gRPC client to Elide daemon once API is available
-	// This will connect to the daemon socket/address and prepare for snippet execution
-	// Example:
-	//   client, err := NewDaemonClient(d.config.DaemonSocket, d.config.DaemonAddress)
-	//   if err != nil {
-	//       return fmt.Errorf("failed to connect to Elide daemon: %v", err)
-	//   }
-	//   d.daemonClient = client
+	// Initialize gRPC client to Elide daemon
+	client, err := NewDaemonClient(d.config.DaemonSocket, d.config.DaemonAddress)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Elide daemon: %v", err)
+	}
+	d.daemonClient = client
+
+	// Check daemon health
+	if err := d.daemonClient.Health(context.Background()); err != nil {
+		d.logger.Warn("daemon health check failed", "error", err)
+	}
+
+	// Create session for this Nomad client (one session per client)
+	// Use a simple session ID since we don't have direct access to node ID in SetConfig
+	// In production, this could use the actual Nomad node ID if available
+	sessionID := "nomad-client-session"
+	
+	// Build session configuration from driver config
+	// Use defaults if not configured
+	contextPoolSize := d.config.SessionConfig.ContextPoolSize
+	if contextPoolSize == 0 {
+		contextPoolSize = 10
+	}
+	enabledLanguages := d.config.SessionConfig.EnabledLanguages
+	if len(enabledLanguages) == 0 {
+		enabledLanguages = []string{"python", "javascript", "typescript"}
+	}
+	enabledIntrinsics := d.config.SessionConfig.EnabledIntrinsics
+	if len(enabledIntrinsics) == 0 {
+		enabledIntrinsics = []string{"io", "env"}
+	}
+	memoryLimitMB := d.config.SessionConfig.MemoryLimitMB
+	if memoryLimitMB == 0 {
+		memoryLimitMB = 512
+	}
+
+	sessionConfig := &pb.SessionConfiguration{
+		ContextPoolSize: uint32(contextPoolSize),
+		EnabledLanguages: enabledLanguages,
+		EnabledIntrinsics: enabledIntrinsics,
+		MemoryLimitMb: uint64(memoryLimitMB),
+		EnableAi: d.config.SessionConfig.EnableAI,
+	}
+
+	// Create session (only if daemon is available)
+	_, err = d.daemonClient.CreateSession(context.Background(), sessionID, sessionConfig)
+	if err != nil {
+		// Don't fail SetConfig if daemon isn't available yet
+		// The fingerprint will report it as undetected
+		d.logger.Warn("failed to create session (daemon may not be running)", "error", err)
+	} else {
+		d.sessionID = sessionID
+		d.logger.Info("created session", "session_id", sessionID)
+	}
 
 	return nil
 }
@@ -181,13 +233,34 @@ func (d *ElideDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 		HealthDescription: drivers.DriverHealthy,
 	}
 
-	// TODO: Check if Elide daemon is available/running
-	// This could check:
-	// - If daemon socket exists and is accessible
-	// - If daemon responds to health check
-	// - If Elide binary is available (if auto_start_daemon is enabled)
+	// Check if Elide daemon is available/running
+	socketPath := d.config.DaemonSocket
+	if socketPath == "" {
+		socketPath = "/tmp/elide-daemon.sock"
+	}
 
-	// For now, report as healthy if no error
+	// Check if socket exists
+	if _, err := os.Stat(socketPath); err != nil {
+		fp.Health = drivers.HealthStateUndetected
+		fp.HealthDescription = fmt.Sprintf("daemon socket not found: %s", socketPath)
+		return fp
+	}
+
+	// If daemon client is available, check health
+	if d.daemonClient != nil {
+		if err := d.daemonClient.Health(context.Background()); err != nil {
+			fp.Health = drivers.HealthStateUnhealthy
+			fp.HealthDescription = fmt.Sprintf("daemon health check failed: %v", err)
+			return fp
+		}
+	}
+
+	// Report driver as available
+	fp.Attributes["driver.elide.available"] = structs.NewBoolAttribute(true)
+	if d.sessionID != "" {
+		fp.Attributes["driver.elide.session_id"] = structs.NewStringAttribute(d.sessionID)
+	}
+
 	return fp
 }
 
@@ -209,57 +282,68 @@ func (d *ElideDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHan
 
 	d.logger.Info("starting task", "task_id", cfg.ID, "language", taskConfig.Language)
 
-	_ = drivers.NewTaskHandle(taskHandleVersion)
-	_ = cfg
+	// Ensure session exists
+	if d.sessionID == "" {
+		return nil, nil, fmt.Errorf("session not initialized - driver not properly configured")
+	}
 
-	// TODO: Once daemon API is available, this becomes a simple gRPC call:
-	//
-	// 1. Ensure daemon is running (if auto_start_daemon is enabled)
-	//    if err := d.ensureDaemonRunning(); err != nil {
-	//        return nil, nil, fmt.Errorf("failed to start daemon: %v", err)
-	//    }
-	//
-	// 2. Read script code (either from file or use inline code)
-	//    code, err := d.readScriptCode(&taskConfig, cfg.TaskDir().Dir)
-	//    if err != nil {
-	//        return nil, nil, fmt.Errorf("failed to read script: %v", err)
-	//    }
-	//
-	// 3. Call ExecuteSnippet gRPC
-	//    resp, err := d.daemonClient.ExecuteSnippet(context.Background(), &ExecuteSnippetRequest{
-	//        Code:        code,
-	//        Language:    taskConfig.Language,
-	//        Env:         taskConfig.Env,
-	//        ExecutionId: cfg.ID,
-	//        Args:        taskConfig.Args,
-	//    })
-	//    if err != nil {
-	//        return nil, nil, fmt.Errorf("failed to execute snippet: %v", err)
-	//    }
-	//
-	// 4. Create task handle with execution ID
-	//    h := &taskHandle{
-	//        executionId: resp.ExecutionId,
-	//        taskConfig:  cfg,
-	//        startedAt:    time.Now(),
-	//        status:      resp.Status,
-	//        logger:      d.logger.With("task_id", cfg.ID),
-	//    }
-	//
-	// 5. Store handle and return
-	//    driverState := TaskState{
-	//        ExecutionId: resp.ExecutionId,
-	//        TaskConfig:  cfg,
-	//        StartedAt:   h.startedAt,
-	//    }
-	//    if err := handle.SetDriverState(&driverState); err != nil {
-	//        return nil, nil, fmt.Errorf("failed to set driver state: %v", err)
-	//    }
-	//    d.tasks.Set(cfg.ID, h)
-	//    return handle, nil, nil
+	// Read script code (either from file or use inline code)
+	var code string
+	var err error
+	if taskConfig.Code != "" {
+		code = taskConfig.Code
+	} else if taskConfig.Script != "" {
+		scriptPath := filepath.Join(cfg.TaskDir().Dir, taskConfig.Script)
+		codeBytes, err := os.ReadFile(scriptPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to read script file: %v", err)
+		}
+		code = string(codeBytes)
+	} else {
+		return nil, nil, fmt.Errorf("either 'script' or 'code' must be specified")
+	}
 
-	// TEMPORARY: Return error until daemon API is available
-	return nil, nil, fmt.Errorf("daemon API not yet available - waiting for Elide team to implement ExecuteSnippet gRPC")
+	// Call ExecuteSnippet gRPC within session
+	resp, err := d.daemonClient.ExecuteSnippet(
+		context.Background(),
+		d.sessionID,
+		cfg.ID,
+		code,
+		taskConfig.Language,
+		taskConfig.Env,
+		taskConfig.Args,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to execute snippet: %v", err)
+	}
+
+	// Create task handle
+	handle := drivers.NewTaskHandle(taskHandleVersion)
+	handle.Config = cfg
+
+	h := &taskHandle{
+		executionId: resp.ExecutionId,
+		sessionId:   d.sessionID,
+		taskConfig:  cfg,
+		startedAt:    time.Now(),
+		status:      resp.Status.String(),
+		logger:      d.logger.With("task_id", cfg.ID),
+	}
+
+	// Store handle and return
+	driverState := TaskState{
+		ExecutionId: resp.ExecutionId,
+		SessionId:   d.sessionID,
+		TaskConfig:  cfg,
+		StartedAt:   h.startedAt,
+	}
+	if err := handle.SetDriverState(&driverState); err != nil {
+		return nil, nil, fmt.Errorf("failed to set driver state: %v", err)
+	}
+	d.tasks.Set(cfg.ID, h)
+
+	d.logger.Info("task started", "task_id", cfg.ID, "execution_id", resp.ExecutionId, "session_id", d.sessionID)
+	return handle, nil, nil
 }
 
 // RecoverTask recreates the in-memory state of a task from a TaskHandle.
@@ -277,37 +361,45 @@ func (d *ElideDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 		return fmt.Errorf("failed to decode task state from handle: %v", err)
 	}
 
-	_ = taskState // TODO: Use once daemon API is available
+	// Ensure daemon client is connected
+	if d.daemonClient == nil {
+		client, err := NewDaemonClient(d.config.DaemonSocket, d.config.DaemonAddress)
+		if err != nil {
+			return fmt.Errorf("failed to reconnect to daemon: %v", err)
+		}
+		d.daemonClient = client
+		d.sessionID = taskState.SessionId
+	}
 
-	// TODO: Once daemon API is available, reattach to execution:
-	//
-	// 1. Ensure daemon client is connected
-	//    if d.daemonClient == nil {
-	//        client, err := NewDaemonClient(d.config.DaemonSocket, d.config.DaemonAddress)
-	//        if err != nil {
-	//            return fmt.Errorf("failed to reconnect to daemon: %v", err)
-	//        }
-	//        d.daemonClient = client
-	//    }
-	//
-	// 2. Check execution status
-	//    status, err := d.daemonClient.GetExecutionStatus(context.Background(), taskState.ExecutionId)
-	//    if err != nil {
-	//        return fmt.Errorf("failed to get execution status: %v", err)
-	//    }
-	//
-	// 3. Recreate handle
-	//    h := &taskHandle{
-	//        executionId: taskState.ExecutionId,
-	//        taskConfig:  taskState.TaskConfig,
-	//        startedAt:   taskState.StartedAt,
-	//        status:      status,
-	//        logger:      d.logger.With("task_id", taskState.TaskConfig.ID),
-	//    }
-	//    d.tasks.Set(taskState.TaskConfig.ID, h)
-	//    return nil
+	// Check execution status
+	statusResp, err := d.daemonClient.GetExecutionStatus(context.Background(), taskState.SessionId, taskState.ExecutionId)
+	if err != nil {
+		return fmt.Errorf("failed to get execution status: %v", err)
+	}
 
-	return fmt.Errorf("daemon API not yet available - cannot recover task")
+	// Recreate handle
+	h := &taskHandle{
+		executionId: taskState.ExecutionId,
+		sessionId:   taskState.SessionId,
+		taskConfig:  taskState.TaskConfig,
+		startedAt:   taskState.StartedAt,
+		status:      statusResp.Status.String(),
+		logger:      d.logger.With("task_id", taskState.TaskConfig.ID),
+	}
+
+	// If execution is complete, set exit result
+	if statusResp.Complete {
+		result := &drivers.ExitResult{
+			ExitCode: int(statusResp.ExitCode),
+		}
+		if statusResp.Error != "" {
+			result.Err = fmt.Errorf(statusResp.Error)
+		}
+		h.SetCompleted(result)
+	}
+
+	d.tasks.Set(taskState.TaskConfig.ID, h)
+	return nil
 }
 
 // WaitTask returns a channel used to notify Nomad when a task exits.
@@ -325,72 +417,62 @@ func (d *ElideDriverPlugin) WaitTask(ctx context.Context, taskID string) (<-chan
 func (d *ElideDriverPlugin) handleWait(ctx context.Context, handle *taskHandle, ch chan *drivers.ExitResult) {
 	defer close(ch)
 
-	_ = handle // TODO: Use once daemon API is available
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
-	// TODO: Once daemon API is available, poll for execution completion:
-	//
-	// ticker := time.NewTicker(1 * time.Second)
-	// defer ticker.Stop()
-	//
-	// for {
-	//     select {
-	//     case <-ctx.Done():
-	//         return
-	//     case <-d.ctx.Done():
-	//         return
-	//     case <-ticker.C:
-	//         status, err := d.daemonClient.GetExecutionStatus(ctx, handle.executionId)
-	//         if err != nil {
-	//             ch <- &drivers.ExitResult{
-	//                 Err: fmt.Errorf("failed to get execution status: %v", err),
-	//             }
-	//             return
-	//         }
-	//
-	//         if status.Complete {
-	//             result := &drivers.ExitResult{
-	//                 ExitCode: status.ExitCode,
-	//             }
-	//             if status.Error != "" {
-	//                 result.Err = errors.New(status.Error)
-	//             }
-	//             ch <- result
-	//             return
-	//         }
-	//     }
-	// }
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-d.ctx.Done():
+			return
+		case <-ticker.C:
+			statusResp, err := d.daemonClient.GetExecutionStatus(ctx, handle.sessionId, handle.executionId)
+			if err != nil {
+				ch <- &drivers.ExitResult{
+					Err: fmt.Errorf("failed to get execution status: %v", err),
+				}
+				return
+			}
 
-	// TEMPORARY: Return error until daemon API is available
-	ch <- &drivers.ExitResult{
-		Err: fmt.Errorf("daemon API not yet available"),
+			// Update handle status
+			handle.stateLock.Lock()
+			handle.status = statusResp.Status.String()
+			handle.stateLock.Unlock()
+
+			if statusResp.Complete {
+				result := &drivers.ExitResult{
+					ExitCode: int(statusResp.ExitCode),
+				}
+				if statusResp.Error != "" {
+					result.Err = fmt.Errorf(statusResp.Error)
+				}
+				handle.SetCompleted(result)
+				ch <- result
+				return
+			}
+		}
 	}
 }
 
 // StopTask stops a running task with the given signal and within the timeout window.
 func (d *ElideDriverPlugin) StopTask(taskID string, timeout time.Duration, signal string) error {
-	_, ok := d.tasks.Get(taskID)
+	handle, ok := d.tasks.Get(taskID)
 	if !ok {
 		return drivers.ErrTaskNotFound
 	}
 
-	_ = timeout  // TODO: Use once daemon API is available
-	_ = signal   // TODO: Use once daemon API is available
+	_ = signal // TODO: Forward signal to execution if daemon supports it
 
-	// TODO: Once daemon API is available, call CancelExecution:
-	//
-	// ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	// defer cancel()
-	//
-	// _, err := d.daemonClient.CancelExecution(ctx, &CancelExecutionRequest{
-	//     ExecutionId: handle.executionId,
-	// })
-	// if err != nil {
-	//     return fmt.Errorf("failed to cancel execution: %v", err)
-	// }
-	//
-	// return nil
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
 
-	return fmt.Errorf("daemon API not yet available - cannot stop task")
+	err := d.daemonClient.CancelExecution(ctx, handle.sessionId, handle.executionId)
+	if err != nil {
+		return fmt.Errorf("failed to cancel execution: %v", err)
+	}
+
+	return nil
 }
 
 // DestroyTask cleans up and removes a task that has terminated.

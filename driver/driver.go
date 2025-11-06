@@ -133,7 +133,7 @@ func (d *ElideDriverPlugin) SetConfig(cfg *base.Config) error {
 	// Initialize gRPC client to Elide daemon
 	client, err := NewDaemonClient(d.config.DaemonSocket, d.config.DaemonAddress)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Elide daemon: %v", err)
+		return fmt.Errorf("failed to connect to Elide daemon: %w", err)
 	}
 	d.daemonClient = client
 
@@ -143,10 +143,14 @@ func (d *ElideDriverPlugin) SetConfig(cfg *base.Config) error {
 	}
 
 	// Create session for this Nomad client (one session per client)
-	// Use a simple session ID since we don't have direct access to node ID in SetConfig
-	// In production, this could use the actual Nomad node ID if available
-	sessionID := "nomad-client-session"
-	
+	// Generate unique session ID to avoid collisions between multiple Nomad clients
+	// Format: nomad-{hostname}-{timestamp} ensures uniqueness across clients
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+	sessionID := fmt.Sprintf("nomad-%s-%d", hostname, time.Now().Unix())
+
 	// Build session configuration from driver config
 	// Use defaults if not configured
 	contextPoolSize := d.config.SessionConfig.ContextPoolSize
@@ -167,19 +171,19 @@ func (d *ElideDriverPlugin) SetConfig(cfg *base.Config) error {
 	}
 
 	sessionConfig := &pb.SessionConfiguration{
-		ContextPoolSize: uint32(contextPoolSize),
-		EnabledLanguages: enabledLanguages,
+		ContextPoolSize:   uint32(contextPoolSize),
+		EnabledLanguages:  enabledLanguages,
 		EnabledIntrinsics: enabledIntrinsics,
-		MemoryLimitMb: uint64(memoryLimitMB),
-		EnableAi: d.config.SessionConfig.EnableAI,
+		MemoryLimitMb:     uint64(memoryLimitMB),
+		EnableAi:          d.config.SessionConfig.EnableAI,
 	}
 
 	// Create session (only if daemon is available)
-	_, err = d.daemonClient.CreateSession(context.Background(), sessionID, sessionConfig)
-	if err != nil {
+	_, sessionErr := d.daemonClient.CreateSession(context.Background(), sessionID, sessionConfig)
+	if sessionErr != nil {
 		// Don't fail SetConfig if daemon isn't available yet
 		// The fingerprint will report it as undetected
-		d.logger.Warn("failed to create session (daemon may not be running)", "error", err)
+		d.logger.Warn("failed to create session (daemon may not be running)", "error", sessionErr)
 	} else {
 		d.sessionID = sessionID
 		d.logger.Info("created session", "session_id", sessionID)
@@ -273,11 +277,20 @@ func (d *ElideDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHan
 
 	var taskConfig TaskConfig
 	if err := cfg.DecodeDriverConfig(&taskConfig); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode driver config: %v", err)
+		return nil, nil, fmt.Errorf("failed to decode driver config: %w", err)
 	}
 
 	if err := taskConfig.Validate(); err != nil {
-		return nil, nil, fmt.Errorf("invalid task config: %v", err)
+		return nil, nil, fmt.Errorf("invalid task config: %w", err)
+	}
+
+	// Validate language against session's enabled languages
+	enabledLanguages := d.config.SessionConfig.EnabledLanguages
+	if len(enabledLanguages) == 0 {
+		enabledLanguages = []string{"python", "javascript", "typescript"} // defaults
+	}
+	if err := taskConfig.ValidateLanguage(enabledLanguages); err != nil {
+		return nil, nil, fmt.Errorf("language validation failed: %w", err)
 	}
 
 	d.logger.Info("starting task", "task_id", cfg.ID, "language", taskConfig.Language)
@@ -296,7 +309,7 @@ func (d *ElideDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHan
 		scriptPath := filepath.Join(cfg.TaskDir().Dir, taskConfig.Script)
 		codeBytes, err := os.ReadFile(scriptPath)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to read script file: %v", err)
+			return nil, nil, fmt.Errorf("failed to read script file: %w", err)
 		}
 		code = string(codeBytes)
 	} else {
@@ -314,7 +327,7 @@ func (d *ElideDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHan
 		taskConfig.Args,
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to execute snippet: %v", err)
+		return nil, nil, fmt.Errorf("failed to execute snippet: %w", err)
 	}
 
 	// Create task handle
@@ -325,7 +338,7 @@ func (d *ElideDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHan
 		executionId: resp.ExecutionId,
 		sessionId:   d.sessionID,
 		taskConfig:  cfg,
-		startedAt:    time.Now(),
+		startedAt:   time.Now(),
 		status:      resp.Status.String(),
 		logger:      d.logger.With("task_id", cfg.ID),
 	}
@@ -338,7 +351,7 @@ func (d *ElideDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHan
 		StartedAt:   h.startedAt,
 	}
 	if err := handle.SetDriverState(&driverState); err != nil {
-		return nil, nil, fmt.Errorf("failed to set driver state: %v", err)
+		return nil, nil, fmt.Errorf("failed to set driver state: %w", err)
 	}
 	d.tasks.Set(cfg.ID, h)
 
@@ -358,14 +371,14 @@ func (d *ElideDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 
 	var taskState TaskState
 	if err := handle.GetDriverState(&taskState); err != nil {
-		return fmt.Errorf("failed to decode task state from handle: %v", err)
+		return fmt.Errorf("failed to decode task state from handle: %w", err)
 	}
 
 	// Ensure daemon client is connected
 	if d.daemonClient == nil {
 		client, err := NewDaemonClient(d.config.DaemonSocket, d.config.DaemonAddress)
 		if err != nil {
-			return fmt.Errorf("failed to reconnect to daemon: %v", err)
+			return fmt.Errorf("failed to reconnect to daemon: %w", err)
 		}
 		d.daemonClient = client
 		d.sessionID = taskState.SessionId
@@ -374,7 +387,7 @@ func (d *ElideDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	// Check execution status
 	statusResp, err := d.daemonClient.GetExecutionStatus(context.Background(), taskState.SessionId, taskState.ExecutionId)
 	if err != nil {
-		return fmt.Errorf("failed to get execution status: %v", err)
+		return fmt.Errorf("failed to get execution status: %w", err)
 	}
 
 	// Recreate handle
@@ -393,7 +406,7 @@ func (d *ElideDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 			ExitCode: int(statusResp.ExitCode),
 		}
 		if statusResp.Error != "" {
-			result.Err = fmt.Errorf(statusResp.Error)
+			result.Err = errors.New(statusResp.Error)
 		}
 		h.SetCompleted(result)
 	}
@@ -430,7 +443,7 @@ func (d *ElideDriverPlugin) handleWait(ctx context.Context, handle *taskHandle, 
 			statusResp, err := d.daemonClient.GetExecutionStatus(ctx, handle.sessionId, handle.executionId)
 			if err != nil {
 				ch <- &drivers.ExitResult{
-					Err: fmt.Errorf("failed to get execution status: %v", err),
+					Err: fmt.Errorf("failed to get execution status: %w", err),
 				}
 				return
 			}
@@ -445,7 +458,7 @@ func (d *ElideDriverPlugin) handleWait(ctx context.Context, handle *taskHandle, 
 					ExitCode: int(statusResp.ExitCode),
 				}
 				if statusResp.Error != "" {
-					result.Err = fmt.Errorf(statusResp.Error)
+					result.Err = errors.New(statusResp.Error)
 				}
 				handle.SetCompleted(result)
 				ch <- result
@@ -469,7 +482,7 @@ func (d *ElideDriverPlugin) StopTask(taskID string, timeout time.Duration, signa
 
 	err := d.daemonClient.CancelExecution(ctx, handle.sessionId, handle.executionId)
 	if err != nil {
-		return fmt.Errorf("failed to cancel execution: %v", err)
+		return fmt.Errorf("failed to cancel execution: %w", err)
 	}
 
 	return nil
@@ -555,3 +568,31 @@ func (d *ElideDriverPlugin) ExecTask(taskID string, cmd []string, timeout time.D
 	return nil, errors.New("exec not supported")
 }
 
+// Shutdown is called when the driver is being shut down and should
+// clean up any resources, including closing the session with the daemon.
+func (d *ElideDriverPlugin) Shutdown() {
+	d.logger.Info("shutting down elide driver")
+
+	// Clean up session with daemon
+	if d.sessionID != "" && d.daemonClient != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		d.logger.Info("deleting session", "session_id", d.sessionID)
+		if err := d.daemonClient.DeleteSession(ctx, d.sessionID); err != nil {
+			d.logger.Warn("failed to delete session on shutdown", "error", err, "session_id", d.sessionID)
+		} else {
+			d.logger.Info("session deleted successfully", "session_id", d.sessionID)
+		}
+	}
+
+	// Close daemon client connection
+	if d.daemonClient != nil {
+		if err := d.daemonClient.Close(); err != nil {
+			d.logger.Warn("failed to close daemon client", "error", err)
+		}
+	}
+
+	// Signal shutdown to all goroutines
+	d.signalShutdown()
+}

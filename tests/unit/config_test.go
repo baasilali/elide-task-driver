@@ -40,6 +40,13 @@ func TestTaskConfig_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "invalid - no language",
+			config: driver.TaskConfig{
+				Script: "test.py",
+			},
+			wantErr: true,
+		},
+		{
 			name: "invalid - both script and code",
 			config: driver.TaskConfig{
 				Script:   "test.py",
@@ -49,12 +56,13 @@ func TestTaskConfig_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "invalid - unsupported language",
+			name: "valid - any language (validation happens in ValidateLanguage)",
 			config: driver.TaskConfig{
 				Script:   "test.rb",
 				Language: "ruby",
 			},
-			wantErr: true,
+			wantErr: false, // Validate() only checks that language is not empty
+			// Language validation against session's enabled_languages happens in ValidateLanguage()
 		},
 		{
 			name: "valid - python",
@@ -103,6 +111,51 @@ func TestSessionConfig_Defaults(t *testing.T) {
 	assert.Equal(t, 0, len(config.EnabledIntrinsics))
 	assert.Equal(t, 0, config.MemoryLimitMB)
 	assert.Equal(t, false, config.EnableAI)
+}
+
+func TestTaskConfig_ValidateLanguage(t *testing.T) {
+	tests := []struct {
+		name             string
+		config           driver.TaskConfig
+		enabledLanguages []string
+		wantErr          bool
+	}{
+		{
+			name: "valid - language enabled",
+			config: driver.TaskConfig{
+				Language: "python",
+			},
+			enabledLanguages: []string{"python", "javascript", "typescript"},
+			wantErr:          false,
+		},
+		{
+			name: "invalid - language not enabled",
+			config: driver.TaskConfig{
+				Language: "ruby",
+			},
+			enabledLanguages: []string{"python", "javascript", "typescript"},
+			wantErr:          true,
+		},
+		{
+			name: "valid - language in empty list (should fail)",
+			config: driver.TaskConfig{
+				Language: "python",
+			},
+			enabledLanguages: []string{},
+			wantErr:          true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.config.ValidateLanguage(tt.enabledLanguages)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
 func TestElideOptions(t *testing.T) {

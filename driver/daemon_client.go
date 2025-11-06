@@ -58,7 +58,7 @@ func NewDaemonClient(socketPath string, tcpAddress string) (DaemonClient, error)
 			grpc.WithContextDialer(dialer),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect via Unix socket: %v", err)
+			return nil, fmt.Errorf("failed to connect via Unix socket: %w", err)
 		}
 	} else if tcpAddress != "" {
 		// Connect via TCP
@@ -67,7 +67,7 @@ func NewDaemonClient(socketPath string, tcpAddress string) (DaemonClient, error)
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect via TCP: %v", err)
+			return nil, fmt.Errorf("failed to connect via TCP: %w", err)
 		}
 	} else {
 		return nil, fmt.Errorf("either socket_path or tcp_address must be specified")
@@ -86,7 +86,7 @@ func (c *elideDaemonClient) CreateSession(ctx context.Context, sessionID string,
 		Config:    config,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %v", err)
+		return nil, fmt.Errorf("failed to create session: %w", err)
 	}
 	c.sessionID = sessionID
 	return resp, nil
@@ -98,7 +98,7 @@ func (c *elideDaemonClient) GetSession(ctx context.Context, sessionID string) (*
 		SessionId: sessionID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get session: %v", err)
+		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	return resp, nil
 }
@@ -109,7 +109,7 @@ func (c *elideDaemonClient) DeleteSession(ctx context.Context, sessionID string)
 		SessionId: sessionID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to delete session: %v", err)
+		return fmt.Errorf("failed to delete session: %w", err)
 	}
 	if c.sessionID == sessionID {
 		c.sessionID = ""
@@ -128,7 +128,7 @@ func (c *elideDaemonClient) ExecuteSnippet(ctx context.Context, sessionID string
 		Args:        args,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute snippet: %v", err)
+		return nil, fmt.Errorf("failed to execute snippet: %w", err)
 	}
 	return resp, nil
 }
@@ -140,7 +140,7 @@ func (c *elideDaemonClient) GetExecutionStatus(ctx context.Context, sessionID st
 		ExecutionId: executionID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get execution status: %v", err)
+		return nil, fmt.Errorf("failed to get execution status: %w", err)
 	}
 	return resp, nil
 }
@@ -152,7 +152,7 @@ func (c *elideDaemonClient) CancelExecution(ctx context.Context, sessionID strin
 		ExecutionId: executionID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to cancel execution: %v", err)
+		return fmt.Errorf("failed to cancel execution: %w", err)
 	}
 	return nil
 }
@@ -161,7 +161,7 @@ func (c *elideDaemonClient) CancelExecution(ctx context.Context, sessionID strin
 func (c *elideDaemonClient) Health(ctx context.Context) error {
 	_, err := c.executionClient.Health(ctx, &pb.HealthRequest{})
 	if err != nil {
-		return fmt.Errorf("health check failed: %v", err)
+		return fmt.Errorf("health check failed: %w", err)
 	}
 	return nil
 }

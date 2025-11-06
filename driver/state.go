@@ -8,16 +8,14 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad/plugins/drivers"
-	"github.com/hashicorp/nomad/plugins/shared/structs"
 )
 
 // TaskState is the runtime state which is encoded in the handle returned to
 // Nomad client. This information is needed to rebuild the task state and
 // handler during recovery.
 type TaskState struct {
-	ReattachConfig *structs.ReattachConfig
-	TaskConfig     *drivers.TaskConfig
-	StartedAt      time.Time
+	TaskConfig  *drivers.TaskConfig
+	StartedAt   time.Time
 
 	// Execution tracking
 	ExecutionId string // Execution ID from Elide daemon (for recovery)

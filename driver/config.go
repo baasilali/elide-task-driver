@@ -25,11 +25,6 @@ var (
 		),
 		// TCP address for Elide daemon (alternative to Unix socket)
 		"daemon_address": hclspec.NewAttr("daemon_address", "string", false),
-		// Whether driver should start daemon if not running
-		"auto_start_daemon": hclspec.NewDefault(
-			hclspec.NewAttr("auto_start_daemon", "bool", false),
-			hclspec.NewLiteral("true"),
-		),
 		// Session configuration (one per Nomad client)
 		"session_config": hclspec.NewBlock("session_config", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"context_pool_size": hclspec.NewDefault(
@@ -58,8 +53,8 @@ var (
 	// taskConfigSpec is the HCL specification for task configuration
 	// This is set per-task in the job spec
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-		// Path to script file (relative to task directory)
-		"script": hclspec.NewAttr("script", "string", true),
+		// Path to script file (relative to task directory) - optional since 'code' can be used instead
+		"script": hclspec.NewAttr("script", "string", false),
 		// Inline code (alternative to script file)
 		"code": hclspec.NewAttr("code", "string", false),
 		// Language: "python", "javascript", "typescript"
@@ -71,13 +66,17 @@ var (
 		"args": hclspec.NewAttr("args", "list(string)", false),
 		// Environment variables
 		"env": hclspec.NewAttr("env", "map(string)", false),
-		// Elide-specific options
+		// Elide-specific options (reserved for future use)
+		// NOTE: These are currently defined but NOT USED. They are reserved for when
+		// the daemon API supports per-task configuration overrides. Currently, all
+		// tasks use the session-level configuration defined in the driver config.
+		// See API_QUESTIONS.md for details on when this will be supported.
 		"elide_opts": hclspec.NewBlock("elide_opts", false, hclspec.NewObject(map[string]*hclspec.Spec{
-			// Memory limit in MB
+			// Memory limit in MB (per-task override - not yet supported)
 			"memory_limit": hclspec.NewAttr("memory_limit", "number", false),
-			// Enable AI features
+			// Enable AI features (per-task override - not yet supported)
 			"enable_ai": hclspec.NewAttr("enable_ai", "bool", false),
-			// Timeout in seconds
+			// Timeout in seconds (not yet supported by daemon API)
 			"timeout": hclspec.NewAttr("timeout", "number", false),
 		})),
 	})
@@ -85,11 +84,10 @@ var (
 
 // Config is the driver configuration set by the Nomad agent
 type Config struct {
-	ElideBinary     string            `codec:"elide_binary"`
-	DaemonSocket    string            `codec:"daemon_socket"`
-	DaemonAddress   string            `codec:"daemon_address"`
-	AutoStartDaemon bool              `codec:"auto_start_daemon"`
-	SessionConfig   SessionConfig     `codec:"session_config"`
+	ElideBinary   string        `codec:"elide_binary"`
+	DaemonSocket  string        `codec:"daemon_socket"`
+	DaemonAddress string        `codec:"daemon_address"`
+	SessionConfig SessionConfig `codec:"session_config"`
 }
 
 // SessionConfig is the session configuration
@@ -117,11 +115,14 @@ type TaskConfig struct {
 	ElideOpts ElideOptions `codec:"elide_opts"`
 }
 
-// ElideOptions contains Elide-specific configuration
+// ElideOptions contains Elide-specific per-task configuration
+// NOTE: These fields are currently RESERVED FOR FUTURE USE and are not applied.
+// All tasks currently use session-level configuration from the driver config.
+// These will be used when the daemon API supports per-task overrides.
 type ElideOptions struct {
-	MemoryLimit int  `codec:"memory_limit"`
-	EnableAI    bool `codec:"enable_ai"`
-	Timeout     int  `codec:"timeout"` // seconds
+	MemoryLimit int  `codec:"memory_limit"` // Per-task memory limit (not yet supported)
+	EnableAI    bool `codec:"enable_ai"`    // Per-task AI enable (not yet supported)
+	Timeout     int  `codec:"timeout"`      // Execution timeout in seconds (not yet supported)
 }
 
 // Validate checks if the task configuration is valid
@@ -132,9 +133,21 @@ func (tc *TaskConfig) Validate() error {
 	if tc.Script != "" && tc.Code != "" {
 		return fmt.Errorf("cannot specify both 'script' and 'code'")
 	}
-	if tc.Language != "python" && tc.Language != "javascript" && tc.Language != "typescript" {
-		return fmt.Errorf("unsupported language: %s (supported: python, javascript, typescript)", tc.Language)
+	// Basic language validation - actual validation against session config happens in driver
+	if tc.Language == "" {
+		return fmt.Errorf("language must be specified")
 	}
 	return nil
 }
+
+// ValidateLanguage checks if the requested language is enabled in the session configuration
+func (tc *TaskConfig) ValidateLanguage(enabledLanguages []string) error {
+	for _, lang := range enabledLanguages {
+		if tc.Language == lang {
+			return nil
+		}
+	}
+	return fmt.Errorf("language %q not enabled in session (enabled: %v)", tc.Language, enabledLanguages)
+}
+
 
